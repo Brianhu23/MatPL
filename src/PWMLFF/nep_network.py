@@ -46,7 +46,7 @@ from src.aux.inference_plot import inference_plot
 import concurrent.futures
 import multiprocessing
 from queue import Queue
-
+from utils.debug_operation import check_cuda_memory, check_cpu_memory
 class nep_network:
     def __init__(self, nep_param:InputParam):
         self.input_param = nep_param
@@ -156,56 +156,63 @@ class nep_network:
     #         davg_dstd_energy_shift = self.davg_dstd_energy_shift
     #     return davg_dstd_energy_shift
     
-    def load_model_optimizer(self, energy_shift):
+    def load_model_optimizer(self, energy_shift, avg_atom_num=1, iterations=1):
         # create model 
         # when running evaluation, nothing needs to be done with davg.npy
-        
+        # if does not use CosineAnnealingWarmRestarts, avg_atom_num = 1
+        adjusted_lr = self.input_param.optimizer_param.learning_rate * avg_atom_num**0.5
+
         model = NEP(self.input_param, energy_shift)
         model = model.to(self.training_type)
 
         # optionally resume from a checkpoint
         checkpoint = None
-        if self.input_param.recover_train:
-            if self.input_param.inference and \
-                self.input_param.file_paths.model_load_path is not None and \
-                    os.path.exists(self.input_param.file_paths.model_load_path): # recover from user input ckpt file for inference work
-                model_path = self.input_param.file_paths.model_load_path
-            else: # resume model specified by user
-                if self.input_param.nep_param.model_wb is None:
+
+        if self.input_param.recover_train and \
+            self.input_param.file_paths.model_load_path is not None and os.path.exists(self.input_param.file_paths.model_load_path): 
+            model_path = self.input_param.file_paths.model_load_path
+
+        elif self.input_param.inference: # recover from user input ckpt file for inference work
+            model_path = self.input_param.file_paths.model_load_path
+        else: # resume model specified by user
+            if self.input_param.nep_param.model_wb is None:
+                if self.input_param.file_paths.model_load_path is not None and \
+                    os.path.exists(self.input_param.file_paths.model_load_path): # 优先从model_load_path 加载模型
+                    model_path = self.input_param.file_paths.model_load_path
+                else:    
                     model_path = self.input_param.file_paths.model_save_path  #recover from last training for training
-                else:
-                    model_path = None
-            if model_path is not None and os.path.isfile(model_path):
-                print("=> loading checkpoint '{}'".format(model_path))
-                if not torch.cuda.is_available():
-                    checkpoint = torch.load(model_path,map_location=torch.device('cpu') )
-                elif self.input_param.gpu is None:
-                    checkpoint = torch.load(model_path)
-                elif torch.cuda.is_available():
-                    # Map model to be loaded to specified single gpu.
-                    loc = "cuda:{}".format(self.input_param.gpu)
-                    checkpoint = torch.load(model_path, map_location=loc)
-                # start afresh
-                if self.input_param.optimizer_param.reset_epoch:
-                    if checkpoint["epoch"] != 1:
-                        print("The loaded model has been trained for {} epochs. Reset the starting epoch to 1. To disable it, please set 'reset_epoch' in the JSON file to false".format(checkpoint["epoch"]))
-                    self.input_param.optimizer_param.start_epoch = 1
-                else:
-                    self.input_param.optimizer_param.start_epoch = checkpoint["epoch"] + 1
-                model.load_state_dict(checkpoint["state_dict"])
-                
-                if "max_neighbor" in checkpoint.keys():
-                    model.max_NN_radial, model.max_NN_angular = checkpoint["max_neighbor"]
-                else:
-                    model.max_NN_radial, model.max_NN_angular = (100, 100)
-                # scheduler.load_state_dict(checkpoint["scheduler"])
-                print("=> loaded checkpoint '{}' (epoch {})"\
-                      .format(model_path, checkpoint["epoch"]))
-                if "compress" in checkpoint.keys():
-                    model.set_comp_tab(checkpoint["compress"])
             else:
-                if model_path is not None:
-                    print("=> no checkpoint found at '{}'".format(model_path))
+                model_path = None
+        if model_path is not None and os.path.isfile(model_path):
+            print("=> loading checkpoint '{}'".format(model_path))
+            if not torch.cuda.is_available():
+                checkpoint = torch.load(model_path,map_location=torch.device('cpu'))
+            elif self.input_param.gpu is None:
+                checkpoint = torch.load(model_path)
+            elif torch.cuda.is_available():
+                # Map model to be loaded to specified single gpu.
+                loc = "cuda:{}".format(self.input_param.gpu)
+                checkpoint = torch.load(model_path, map_location=loc)
+            # start afresh
+            if self.input_param.optimizer_param.reset_epoch:
+                if checkpoint["epoch"] != 1:
+                    print("The loaded model has been trained for {} epochs. Reset the starting epoch to 1. To disable it, please set 'reset_epoch' in the JSON file to false".format(checkpoint["epoch"]))
+                self.input_param.optimizer_param.start_epoch = 1
+            else:
+                self.input_param.optimizer_param.start_epoch = checkpoint["epoch"] + 1
+            model.load_state_dict(checkpoint["state_dict"])
+            
+            if "max_neighbor" in checkpoint.keys():
+                model.max_NN_radial, model.max_NN_angular = checkpoint["max_neighbor"]
+            else:
+                model.max_NN_radial, model.max_NN_angular = (100, 100)
+            # scheduler.load_state_dict(checkpoint["scheduler"])
+            print("=> loaded checkpoint '{}' (epoch {})"\
+                    .format(model_path, checkpoint["epoch"]))
+            if "compress" in checkpoint.keys():
+                model.set_comp_tab(checkpoint["compress"])
+        else:
+            print("=> no checkpoint found at '{}'".format(model_path))
 
         if not torch.cuda.is_available():
             print("using CPU")
@@ -242,31 +249,42 @@ class nep_network:
         elif self.input_param.optimizer_param.opt_name == "ADAM":
             if self.input_param.optimizer_param.lambda_2 is None:
                 optimizer = optim.Adam(model.parameters(), 
-                                    lr=self.input_param.optimizer_param.learning_rate)
+                                    lr=adjusted_lr)
             else:
                 optimizer = optim.Adam(model.parameters(), 
-                                    lr=self.input_param.optimizer_param.learning_rate, 
+                                    lr=adjusted_lr, 
                                         weight_decay=self.input_param.optimizer_param.lambda_2)
-
+            
         elif self.input_param.optimizer_param.opt_name == "ADAMW":
             if self.input_param.optimizer_param.lambda_2 is None:
                 optimizer = optim.AdamW(model.parameters(), 
-                                    lr=self.input_param.optimizer_param.learning_rate)
+                                    lr=adjusted_lr)
             else:
                 optimizer = optim.AdamW(model.parameters(), 
-                                    lr=self.input_param.optimizer_param.learning_rate, 
+                                    lr=adjusted_lr, 
                                         weight_decay=self.input_param.optimizer_param.lambda_2)
 
         elif self.input_param.optimizer_param.opt_name == "SGD":
             optimizer = optim.SGD(
                 model.parameters(), 
-                self.input_param.optimizer_param.learning_rate,
+                adjusted_lr,
                 momentum=self.input_param.optimizer_param.momentum,
                 weight_decay=self.input_param.optimizer_param.weight_decay
             )
         else:
             raise Exception("Error: Unsupported optimizer!")
-        
+
+        if self.input_param.optimizer_param.t_0 is not None and \
+            self.input_param.optimizer_param.opt_name not in  ["LKF", "GKF"]: 
+            scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, 
+                                                                    T_0= self.input_param.optimizer_param.t_0*iterations, 
+                                                                    T_mult=self.input_param.optimizer_param.t_mult,
+                                                                    eta_min=self.input_param.optimizer_param.stop_lr,
+                                                                    last_epoch=-1,
+                                                                    verbose=self.input_param.optimizer_param.verbose)
+
+        else:
+            scheduler = None
         q_scaler = None
         if checkpoint is not None and "q_scaler" in checkpoint.keys(): # from model ckpt file
             q_scaler = checkpoint["q_scaler"]
@@ -293,15 +311,15 @@ class nep_network:
         '''
         # self.device = optimizer._state["P"][0].device
         # set params device
-        return model, optimizer
+        return model, optimizer, scheduler
 
     def train(self):
         energy_shift, train_loader, val_loader, train_datset = self.load_data()
         #energy_shift is same as energy_shift of upper; atom_map is the user input order
-        model, optimizer = self.load_model_optimizer(energy_shift)
+        model, optimizer, scheduler = self.load_model_optimizer(energy_shift, avg_atom_num=1, iterations=len(train_loader)) #train_datset.avg_image_atom
         
         max_NN_radial, min_NN_radial, max_NN_angular, min_NN_angular = \
-                        calculate_neighbor_num_max_min(dataset=train_datset, device = self.device)
+                        calculate_neighbor_num_max_min(dataset=train_datset, device = self.device, num_workers=self.input_param.workers)
         
         model.max_NN_radial  = max(model.max_NN_radial, max_NN_radial)
         model.min_NN_radial  = min(model.min_NN_radial, min_NN_radial)
@@ -320,7 +338,8 @@ class nep_network:
                             model.l_max_3b,
                             model.l_max_4b,
                             model.l_max_5b,
-                            self.device)
+                            self.device,
+                            num_workers=self.input_param.workers)
 
             model.reset_scaler(q_scaler, self.training_type, self.device)
 
@@ -394,7 +413,7 @@ class nep_network:
                 )
             else:
                 loss, loss_Etot, loss_Etot_per_atom, loss_Force, loss_Ei, loss_egroup, loss_virial, loss_virial_per_atom, real_lr, loss_l1, loss_l2 = train(
-                    train_loader, model, self.criterion, optimizer, epoch, \
+                    train_loader, model, self.criterion, optimizer, scheduler, epoch, \
                         self.input_param.optimizer_param.learning_rate, self.device, self.input_param
                 )
             time_end = time.time()
@@ -732,7 +751,7 @@ class nep_network:
     def inference(self):
         # do inference
         energy_shift, train_loader, val_loader, train_datset = self.load_data()
-        model, optimizer = self.load_model_optimizer(energy_shift)
+        model, optimizer,_ = self.load_model_optimizer(energy_shift)
         max_NN_radial, min_NN_radial, max_NN_angular, min_NN_angular = \
                         calculate_neighbor_num_max_min(dataset=train_datset, device = self.device)
         

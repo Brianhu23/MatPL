@@ -122,7 +122,7 @@
             ],
             "env_list": [
                 "conda activate matpl-2025.3",
-                "source /data/home/wuxingxing/codespace/PWMLFF_grad_batch/env.sh"
+                "source /data/home/wuxingxing/codespace/MatPL-2025.3/env.sh"
             ]
         },
         {
@@ -164,8 +164,8 @@
                 "intel/2020"
             ],
             "env_list": [
-                "export PYTHONPATH=/data/home/wuxingxing/codespace/PWMLFF_grad_batch/src:$PYTHONPATH",
-                "export PATH=/data/home/wuxingxing/codespace/PWMLFF_grad_batch/src/bin:$PATH",
+                "export PYTHONPATH=/data/home/wuxingxing/codespace/MatPL-2025.3/src:$PYTHONPATH",
+                "export PATH=/data/home/wuxingxing/codespace/MatPL-2025.3/src/bin:$PATH",
                 "conda activate PWMLFF"
             ]
         }
@@ -196,17 +196,19 @@
         {"_idx":19, "json_file" : "AuAg/nep_lkf.json",           "model_type" :"NEP", "do_test": true, "format":"pwmlff/npy", "train_data": ["AuAg/PWdata/Ag10Au22", "AuAg/PWdata/Ag10Au38", "AuAg/PWdata/Ag10Au6", "AuAg/PWdata/Ag11Au21", "AuAg/PWdata/Ag11Au37", "AuAg/PWdata/Ag11Au5", "AuAg/PWdata/Ag12"]},
         {"_idx":20, "json_file" : "AuAg/nep_adam.json",          "model_type" :"NEP", "do_test": true, "format":"pwmlff/npy", "train_data": ["AuAg/PWdata/Ag10Au22", "AuAg/PWdata/Ag10Au38", "AuAg/PWdata/Ag10Au6", "AuAg/PWdata/Ag11Au21", "AuAg/PWdata/Ag11Au37", "AuAg/PWdata/Ag11Au5", "AuAg/PWdata/Ag12"]},
         {"_idx":21, "json_file" : "AuAg/dp_lkf.json",            "model_type" :"DP",  "do_test": true, "format":"pwmlff/npy", "train_data": ["AuAg/PWdata/Ag10Au22", "AuAg/PWdata/Ag10Au38", "AuAg/PWdata/Ag10Au6", "AuAg/PWdata/Ag11Au21", "AuAg/PWdata/Ag11Au37", "AuAg/PWdata/Ag11Au5", "AuAg/PWdata/Ag12"]},
-        {"_idx":22, "json_file" : "AuAg/dp_adam.json",           "model_type" :"DP",  "do_test": true, "format":"pwmlff/npy", "train_data": ["AuAg/PWdata/Ag10Au22", "AuAg/PWdata/Ag10Au38", "AuAg/PWdata/Ag10Au6", "AuAg/PWdata/Ag11Au21", "AuAg/PWdata/Ag11Au37", "AuAg/PWdata/Ag11Au5", "AuAg/PWdata/Ag12"]}
-    
+        {"_idx":22, "json_file" : "AuAg/dp_adam.json",           "model_type" :"DP",  "do_test": true, "format":"pwmlff/npy", "train_data": ["AuAg/PWdata/Ag10Au22", "AuAg/PWdata/Ag10Au38", "AuAg/PWdata/Ag10Au6", "AuAg/PWdata/Ag11Au21", "AuAg/PWdata/Ag11Au37", "AuAg/PWdata/Ag11Au5", "AuAg/PWdata/Ag12"]},
+        {"_idx":23, "json_file" : "AuAg/dp_adam_nocos.json",     "model_type" :"DP",  "do_test": true, "format":"pwmlff/npy", "train_data": ["AuAg/PWdata/Ag10Au22", "AuAg/PWdata/Ag10Au38", "AuAg/PWdata/Ag10Au6", "AuAg/PWdata/Ag11Au21", "AuAg/PWdata/Ag11Au37", "AuAg/PWdata/Ag11Au5", "AuAg/PWdata/Ag12"]},
+        {"_idx":24, "json_file" : "AuAg/nep_adam_cos.json",      "model_type" :"NEP", "do_test": true, "format":"pwmlff/npy", "train_data": ["AuAg/PWdata/Ag10Au22", "AuAg/PWdata/Ag10Au38", "AuAg/PWdata/Ag10Au6", "AuAg/PWdata/Ag11Au21", "AuAg/PWdata/Ag11Au37", "AuAg/PWdata/Ag11Au5", "AuAg/PWdata/Ag12"]}
+        
     ],
 
     "work_dir": "./test_workdir",
     "work_list": [
         {
             "_work_type":"mcloud envs(gpu and cpu) for DP, NEP",
-            "envs":[5, 6],
+            "envs":[5],
             "epochs":[1,1,1,1,1],
-            "train_inputs":[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,13,14,15,16,17,18,19,20,21,22]
+            "train_inputs":[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,13,14,15,16,17,18,19,20,21,22,23,24]
         }
     ]
 }

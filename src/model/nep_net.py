@@ -38,7 +38,7 @@ class NEP(nn.Module):
             self.dtype = torch.float32
         else:
             raise RuntimeError("train(): unsupported training data type")
-        
+        self.energy_shift = energy_shift        
         self.set_cparam(np.mean(energy_shift))
 
         # self.maxNeighborNum = input_param.max_neigh_num nep this value is calculated online

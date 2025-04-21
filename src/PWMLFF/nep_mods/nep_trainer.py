@@ -1,4 +1,5 @@
 import os
+import glob
 import pandas as pd
 import numpy as np
 import time
@@ -79,9 +80,10 @@ def print_l1_l2(model):
     L2 = L2 / nums_param
     return L1, L2
 
-def train(train_loader, model, criterion, optimizer, epoch, start_lr, device, args:InputParam):
+def train(train_loader, model, criterion, optimizer, scheduler, epoch, start_lr, device, args:InputParam):
     batch_time = AverageMeter("Time", ":6.3f")
     data_time = AverageMeter("Data", ":6.3f")
+    learning_rate = AverageMeter("LR", ":.8e", Summary.AVERAGE)
     losses = AverageMeter("Loss", ":.4e", Summary.AVERAGE)
     loss_Etot = AverageMeter("Etot", ":.4e", Summary.ROOT)
     loss_Etot_per_atom = AverageMeter("Etot_per_atom", ":.4e", Summary.ROOT)
@@ -94,7 +96,7 @@ def train(train_loader, model, criterion, optimizer, epoch, start_lr, device, ar
     loss_L2 = AverageMeter("Loss_L2", ":.4e", Summary.ROOT)
     progress = ProgressMeter(
         len(train_loader),
-        [batch_time, data_time, losses, loss_L1, loss_L2, loss_Etot, loss_Etot_per_atom, loss_Force, loss_Ei, loss_Egroup, loss_Virial, loss_Virial_per_atom],
+        [batch_time, data_time, learning_rate, losses, loss_L1, loss_L2, loss_Etot, loss_Etot_per_atom, loss_Force, loss_Ei, loss_Egroup, loss_Virial, loss_Virial_per_atom],
         prefix="Epoch: [{}]".format(epoch),
     )
     
@@ -131,12 +133,18 @@ def train(train_loader, model, criterion, optimizer, epoch, start_lr, device, ar
         batch_size =  sample["num_atom"].shape[0]
         avg_atom_number = (sample['num_atom_sum'][-1] / batch_size).item()
         nr_batch_sample = sample["num_atom"].shape[0]
-        global_step = (epoch - 1) * len(train_loader) + i * nr_batch_sample
-        real_lr = adjust_lr(global_step, start_lr, \
+        if scheduler is None:
+            global_step = (epoch - 1) * len(train_loader) + i * nr_batch_sample
+            real_lr = adjust_lr(global_step, start_lr, \
                             args.optimizer_param.stop_step, args.optimizer_param.decay_step, args.optimizer_param.stop_lr) #  stop_step, decay_step
-        for param_group in optimizer.param_groups:
-            param_group["lr"] = real_lr * (avg_atom_number**0.5)
-
+            for param_group in optimizer.param_groups:
+                param_group["lr"] = real_lr * (avg_atom_number**0.5)
+        else:
+            real_lr = optimizer.param_groups[0]["lr"]
+            # adjusted_lr = real_lr * (avg_atom_number ** 0.5)
+            # for param_group in optimizer.param_groups:
+            #     param_group["lr"] = adjusted_lr
+        learning_rate.update(real_lr)
         Etot_predict, Ei_predict, Force_predict, Egroup_predict, Virial_predict = model(
                 NN_radial, NL_radial, Ri_radial, 
                     NN_angular, NL_angular, Ri_angular,
@@ -267,7 +275,7 @@ def train(train_loader, model, criterion, optimizer, epoch, start_lr, device, ar
         if args.optimizer_param.train_egroup is True:
             loss_Egroup.update(loss_Egroup_val.item(), batch_size)
 
-        loss_Force.update(loss_F_val.item(), Ei_predict.shape[0])
+        loss_Force.update(loss_F_val.item(), batch_size)
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -275,6 +283,31 @@ def train(train_loader, model, criterion, optimizer, epoch, start_lr, device, ar
 
         if i % args.optimizer_param.print_freq == 0:
             progress.display(i + 1)
+
+        if args.save_step is not None and i % args.save_step == 0:
+            save_step_checkpoint(
+                    {
+                        "json_file":args.to_dict(),
+                        "epoch": epoch,
+                        "state_dict": model.state_dict(),
+                        "energy_shift":model.energy_shift,
+                        "max_neighbor": [model.max_NN_radial, model.max_NN_angular],
+                        "q_scaler": model.get_q_scaler(),
+                        "atom_type_order": args.atom_type    #atom type order of davg/dstd/energy_shift
+                        # "optimizer":optimizer.state_dict()
+                        # "sij_max":Sij_max
+                    },
+                    os.path.join(args.file_paths.model_store_dir, "save_step"),
+                    epoch,
+                    i,
+                    args.max_save_num
+                )
+        # 添加内存清理
+        # del NN_radial, NN_angular, NL_radial, NL_angular, Ri_radial, Ri_angular
+        # del Etot_predict, Ei_predict, Force_predict, Egroup_predict, Virial_predict
+        # del sample
+        # if torch.cuda.is_available():
+        #     torch.cuda.empty_cache()
 
     progress.display_summary(["Training Set:"])
     return (
@@ -404,7 +437,7 @@ def train_KF(train_loader, model, criterion, optimizer, epoch, device, args:Inpu
         loss_Ei.update(loss_Ei_val.item(), Ei_predict.shape[0])
         if args.optimizer_param.train_egroup is True:
             loss_Egroup.update(loss_Egroup_val.item(), batch_size)
-        loss_Force.update(loss_F_val.item(), Ei_predict.shape[0])
+        loss_Force.update(loss_F_val.item(), batch_size)
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -506,7 +539,7 @@ def valid(val_loader, model, criterion, device, args:InputParam):
             loss_Ei.update(loss_Ei_val.item(), batch_size)
             if args.optimizer_param.train_egroup is True:
                 loss_Egroup.update(loss_Egroup_val.item(), batch_size)
-            loss_Force.update(loss_F_val.item(), Ei_predict.shape[0])
+            loss_Force.update(loss_F_val.item(), batch_size)
             # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
@@ -674,6 +707,17 @@ def predict(val_loader, model, criterion, device, args:InputParam, isprofile=Fal
         virial_predict_list.append(Virial_predict[:,virial_index].flatten().detach().cpu().numpy())
     return res_pd, etot_label_list, etot_predict_list, ei_label_list, ei_predict_list, force_label_list, force_predict_list, virial_label_list, virial_predict_list
 
+
+def save_step_checkpoint(state, save_dir:str, epoch:int, iter:int, max_save_num:int=10):
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    # get model
+    ckpt_list = glob.glob(os.path.join(save_dir, "*.ckpt"))
+    ckpt_list = sorted(ckpt_list, key=lambda x:tuple(map(int, os.path.basename(x).split('.')[0].split('_'))))
+    if len(ckpt_list) >= max_save_num:
+        for i in range(0, len(ckpt_list)-max_save_num):
+            os.remove(ckpt_list[i])
+    save_checkpoint(state, "{}_{}.ckpt".format(epoch, iter), save_dir)
 
 def save_checkpoint(state, filename, prefix):
     filename = os.path.join(prefix, filename)

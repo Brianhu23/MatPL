@@ -1,0 +1,20 @@
+LAMMPS (29 Aug 2024 - Update 2)
+units           metal
+boundary        p p p
+atom_style      atomic
+processors      * * *
+neighbor        2.0 bin
+neigh_modify    every 10 delay 0 check no
+
+read_data       lmp.config
+Reading data file ...
+  triclinic box = (0 0 0) to (12.378618 10.720198 25.3091) with tilt (-6.1893082 0 0)
+WARNING: Triclinic box skew is large. LAMMPS will run inefficiently. (../domain.cpp:221)
+  1 by 1 by 4 MPI processor grid
+  reading atoms ...
+  320 atoms
+  read_data CPU = 0.023 seconds
+
+pair_style      matpl
+ERROR: Illegal pair_style command (../pair_matpl.cpp:90)
+Last command: pair_style      matpl

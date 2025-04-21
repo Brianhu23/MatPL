@@ -16,6 +16,16 @@ class OptimizerParam(object):
         self.reset_epoch = get_parameter("reset_epoch", optimizer_dict, True)
         self.start_epoch = get_parameter("start_epoch", optimizer_dict, 1)
 
+        self.max_norm    = get_parameter("max_norm", optimizer_dict, None)
+        self.norm_type   = get_parameter("norm_type", optimizer_dict, None)
+        self.clip_value  = get_parameter("clip_value", optimizer_dict, None)
+        # learining rate,  https://zhuanlan.zhihu.com/p/261134624
+        self.t_0    = get_parameter("t_0", optimizer_dict, None)
+        self.t_mult   = get_parameter("t_mult", optimizer_dict, None)
+        if (self.t_0 is None and self.t_mult is not None) or (self.t_0 is not None and self.t_mult is None):
+            raise Exception("ERROR! the input t_0 and t_mult need to be set simultaneously!")
+        self.verbose  = get_parameter("verbose", optimizer_dict, False) # nouse
+
         self.lambda_1 = None
         if "lambda_1" in optimizer_dict:
             raise Warning("The lambda_1 is not realized now!")
@@ -157,4 +167,16 @@ class OptimizerParam(object):
             # opt_dict["end_pre_fac_ei"] = self.end_pre_fac_ei
             opt_dict["end_pre_fac_virial"] = self.end_pre_fac_virial
             # opt_dict["end_pre_fac_egroup"] = self.end_pre_fac_egroup
+
+            if self.max_norm is not None:
+                opt_dict["max_norm"] = self.max_norm
+            if self.norm_type is not None:
+                opt_dict["norm_type"] = self.norm_type
+            if self.clip_value is not None:
+                opt_dict["clip_value"] = self.clip_value
+            if self.t_0 is not None:
+                opt_dict["t_0"] = self.t_0
+            if self.t_mult is not None:
+                opt_dict["t_mult"] = self.t_mult
+
         return opt_dict

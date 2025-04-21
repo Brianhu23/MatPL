@@ -9,11 +9,7 @@ echo "Starting job $SLURM_JOB_ID at " `date`
 
 echo "Running on nodes: $SLURM_NODELIST"
 
-module load intel/2020
-
-
-source /data/home/wuxingxing/codespace/lammps-MatPL/lammps-fortran-2025.3/env.sh
-
+module load lammps4matpl/fortran
 
 mpirun -np 4 lmp_mpi -in in.lammps
 

@@ -27,11 +27,18 @@ class AverageMeter(object):
     
     def update(self, val, n=1):
         if n > 0: # for same data, such as virial, some images do not have virial datas, the n will be 0
-            self.val = val**0.5
-            self.sum += val * n
-            self.count += n
-            self.avg = self.sum / self.count
-            self.root = self.avg**0.5
+            if self.summary_type is Summary.AVERAGE:
+                self.val = val
+                self.sum += val * n
+                self.count += n
+                self.avg = self.sum / self.count
+                self.root = self.avg
+            else:
+                self.val = val**0.5
+                self.sum += val * n
+                self.count += n
+                self.avg = self.sum / self.count
+                self.root = self.avg**0.5
 
     def all_reduce(self):
         if torch.cuda.is_available():
@@ -49,7 +56,10 @@ class AverageMeter(object):
         self.root = self.avg**0.5
 
     def __str__(self):
-        fmtstr = "{name} {val" + self.fmt + "} ({root" + self.fmt + "})"
+        if self.summary_type is Summary.AVERAGE:
+            fmtstr = "{name} {val" + self.fmt + "} ({avg" + self.fmt + "})"
+        else:
+            fmtstr = "{name} {val" + self.fmt + "} ({root" + self.fmt + "})"
         return fmtstr.format(**self.__dict__)
 
     def summary(self):

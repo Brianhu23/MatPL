@@ -109,7 +109,8 @@ class UniDataset(Dataset):
         self.cutoff_angular = cutoff_angular
         self.max_NN_radial = 100
         self.max_NN_angular= 100
-        self.max_atom_nums = -1
+        self.max_atom_nums = 1
+        self.avg_image_atom= None
         self.use_cartesian = use_cartesian
         self.dtype = dtype if isinstance(dtype, torch.dtype) else getattr(torch, dtype)
         self.index_type = (
@@ -132,6 +133,7 @@ class UniDataset(Dataset):
                 else:
                     self.image_list.append(image_read)
         class_dict = {}
+        atom_avg_list = []
         for image in self.image_list:
             if self.use_cartesian:
                 if image.cartesian is False:
@@ -140,6 +142,7 @@ class UniDataset(Dataset):
                 if image.cartesian is True:
                     image._set_fractional()
             self.max_atom_nums = max(self.max_atom_nums, image.position.shape[0])
+            atom_avg_list.append(image.position.shape[0])
             if not hasattr(image, 'atom_type_map'):
                 image.atom_type_map = np.array([self.atom_types.index(_) for _ in image.atom_types_image])
 
@@ -159,6 +162,7 @@ class UniDataset(Dataset):
         else:
             self.energy_shift = [0 for _ in self.atom_types] # for valid or test the energy shift is reused from models
         
+        self.avg_image_atom = np.mean(atom_avg_list)        
         return self.image_list, len(self.image_list)
 
     def set_energy_shift_2(self, class_dict):
@@ -346,7 +350,8 @@ Calculate the maximum and minimum neighbor numbers for radial and angular distri
 """
 def calculate_neighbor_num_max_min(
                 dataset: UniDataset, 
-                device: torch.device) -> None:
+                device: torch.device,
+                num_workers:int=0) -> None:
     max_radial = -1e10
     min_radial = 1e10
     max_angular = -1e10
@@ -356,7 +361,7 @@ def calculate_neighbor_num_max_min(
         batch_size=1024,
         shuffle=False,
         collate_fn=variable_length_collate_fn,
-        num_workers=4,
+        num_workers=num_workers,
     )
     
     for _, sample in tqdm(enumerate(dataloader), total=len(dataloader), desc="Calculating max neighbors"):
@@ -396,7 +401,8 @@ def calculate_neighbor_scaler(
                 lmax_3,
                 lmax_4,
                 lmax_5,
-                device: torch.device):
+                device: torch.device,
+                num_workers:int=0):
     t1 = time.time()
     batch_size_num = calculate_batch(dataset.max_atom_nums, max_NN_radial)
     dataloader = torch.utils.data.DataLoader(
@@ -404,7 +410,7 @@ def calculate_neighbor_scaler(
         batch_size=batch_size_num,
         shuffle=False,
         collate_fn=variable_length_collate_fn,
-        num_workers=4,
+        num_workers=num_workers,
     )
 
     dtype = dataset.dtype

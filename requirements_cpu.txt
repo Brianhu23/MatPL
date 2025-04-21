@@ -14,3 +14,5 @@ pwdata
 pwact
 pybind11
 charset_normalizer==3.3.2
+psutil
+

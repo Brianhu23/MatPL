@@ -100,7 +100,7 @@ def train(train_loader, model, criterion, optimizer, epoch, start_lr, device, ar
         Force_label = Variable(Force_label_cpu.to(device))   #[40,108,3]
         input_data = Variable(input_data_cpu.to(device), requires_grad=True)
         dfeat = Variable(dfeat_cpu.to(device))
-        if args.file_paths.alive_atomic_energy:
+        if args.file_paths.alive_atomic_energy and args.optimizer_param.train_egroup:
             Egroup_label = Variable(Egroup_label_cpu.to(device))
             egroup_weight = Variable(egroup_weight_cpu.to(device))
             divider = Variable(divider_cpu.to(device))

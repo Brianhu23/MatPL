@@ -1,5 +1,7 @@
 import torch
 import gc
+import psutil
+
 def check_cuda_memory(epoch, num_epochs, types, empty=True):
     if empty:
         torch.cuda.empty_cache()  # Clear the cache to obtain accurate memory usage information.
@@ -20,3 +22,14 @@ def find_tensor_memory():
     # 打印张量的大小和内存占用
     for t in tensors:
         print("Size:", t.size(), "Memory:", t.element_size() * t.nelement())
+
+def check_cpu_memory(prefix_info:str=None):
+    if prefix_info is not None:
+        print(prefix_info)
+    # 获取内存信息
+    mem = psutil.virtual_memory()
+    # 转换为 GB（可选）
+    total_gb = mem.total / (1024 ** 3)
+    available_gb = mem.available / (1024 ** 3)
+    used_gb = mem.used / (1024 ** 3)
+    print(f"ALL MEMORY: {total_gb:.5f} GB; AVAIBLE MEMORY: {available_gb:.5f} GB; ALLOCATED MEMORY: {used_gb:.5f} GB; RATE of MEMORY : {mem.percent}%")

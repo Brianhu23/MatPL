@@ -191,7 +191,7 @@ class dp_network:
             davg_dstd_energy_shift = self.davg_dstd_energy_shift
         return davg_dstd_energy_shift
     
-    def load_model_optimizer(self, davg, dstd, energy_shift):
+    def load_model_optimizer(self, davg, dstd, energy_shift, iterations=1):
         # create model 
         # when running evaluation, nothing needs to be done with davg.npy
         if self.dp_params.descriptor.type_embedding:
@@ -202,35 +202,38 @@ class dp_network:
 
         # optionally resume from a checkpoint
         checkpoint = None
-        if self.dp_params.recover_train:
-            if self.inference and os.path.exists(self.dp_params.file_paths.model_load_path): # recover from user input ckpt file for inference work
-                model_path = self.dp_params.file_paths.model_load_path
-            else: # resume model specified by user
-                model_path = self.dp_params.file_paths.model_save_path  #recover from last training for training
-            if os.path.isfile(model_path):
-                print("=> loading checkpoint '{}'".format(model_path))
-                if not torch.cuda.is_available():
-                    checkpoint = torch.load(model_path,map_location=torch.device('cpu') )
-                elif self.dp_params.gpu is None:
-                    checkpoint = torch.load(model_path)
-                elif torch.cuda.is_available():
-                    # Map model to be loaded to specified single gpu.
-                    loc = "cuda:{}".format(self.dp_params.gpu)
-                    checkpoint = torch.load(model_path, map_location=loc)
-                # start afresh
-                if self.dp_params.optimizer_param.reset_epoch:
-                    self.dp_params.optimizer_param.start_epoch = 1
-                else:
-                    self.dp_params.optimizer_param.start_epoch = checkpoint["epoch"] + 1
-                model.load_state_dict(checkpoint["state_dict"])
-                
-                # scheduler.load_state_dict(checkpoint["scheduler"])
-                print("=> loaded checkpoint '{}' (epoch {})"\
-                      .format(model_path, checkpoint["epoch"]))
-                if "compress" in checkpoint.keys():
-                    model.set_comp_tab(checkpoint["compress"])
+        if self.dp_params.recover_train and \
+            (self.dp_params.file_paths.model_load_path is not None and os.path.exists(self.dp_params.file_paths.model_load_path)):
+            model_path = self.dp_params.file_paths.model_load_path
+        elif self.inference: 
+            model_path = self.dp_params.file_paths.model_load_path
+        else:
+            model_path = self.dp_params.file_paths.model_save_path  #recover from last training for training
+
+        if os.path.isfile(model_path):
+            print("=> loading checkpoint '{}'".format(model_path))
+            if not torch.cuda.is_available():
+                checkpoint = torch.load(model_path,map_location=torch.device('cpu') )
+            elif self.dp_params.gpu is None:
+                checkpoint = torch.load(model_path)
+            elif torch.cuda.is_available():
+                # Map model to be loaded to specified single gpu.
+                loc = "cuda:{}".format(self.dp_params.gpu)
+                checkpoint = torch.load(model_path, map_location=loc)
+            # start afresh
+            if self.dp_params.optimizer_param.reset_epoch:
+                self.dp_params.optimizer_param.start_epoch = 1
             else:
-                print("=> no checkpoint found at '{}'".format(model_path))
+                self.dp_params.optimizer_param.start_epoch = checkpoint["epoch"] + 1
+            model.load_state_dict(checkpoint["state_dict"])
+            
+            # scheduler.load_state_dict(checkpoint["scheduler"])
+            print("=> loaded checkpoint '{}' (epoch {})"\
+                    .format(model_path, checkpoint["epoch"]))
+            if "compress" in checkpoint.keys():
+                model.set_comp_tab(checkpoint["compress"])
+        else:
+            print("=> no checkpoint found at '{}'".format(model_path))
 
         if not torch.cuda.is_available():
             print("using CPU")
@@ -292,6 +295,18 @@ class dp_network:
         else:
             raise Exception("Error: Unsupported optimizer!")
         
+        if self.dp_params.optimizer_param.t_0 is not None and \
+            self.dp_params.optimizer_param.opt_name not in  ["LKF", "GKF"]: 
+            scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, 
+                                                                    T_0= self.dp_params.optimizer_param.t_0*iterations, 
+                                                                    T_mult=self.dp_params.optimizer_param.t_mult,
+                                                                    eta_min=self.dp_params.optimizer_param.stop_lr,
+                                                                    last_epoch=-1,
+                                                                    verbose=self.dp_params.optimizer_param.verbose)
+
+        else:
+            scheduler = None
+
         if checkpoint is not None and "optimizer" in checkpoint.keys():
             optimizer.load_state_dict(checkpoint["optimizer"])
             load_p = checkpoint["optimizer"]['state'][0]['P']
@@ -310,7 +325,7 @@ class dp_network:
         # scheduler = StepLR(optimizer, step_size=30, gamma=0.1)
         '''
 
-        return model, optimizer
+        return model, optimizer, scheduler
 
     def load_model_script(self, davg, dstd, energy_shift):
         # create model 
@@ -373,7 +388,7 @@ class dp_network:
         self.dp_params.max_neigh_num = max(self.dp_params.max_neigh_num, test_dataset.m_neigh)
         self.dp_params.print_input_params(json_file_save_name="std_input.json")
 
-        model, optimizer = self.load_model_optimizer(davg, dstd, energy_shift)
+        model, optimizer, _ = self.load_model_optimizer(davg, dstd, energy_shift)
         start = time.time()
         atom_num_list, res_pd, etot_label_list, etot_predict_list, ei_label_list, ei_predict_list, force_label_list, force_predict_list, virial_label_list, virial_predict_list\
         = predict(test_loader, model, self.criterion, self.device, self.dp_params)
@@ -424,7 +439,7 @@ class dp_network:
         if davg is None:
             energy_shift = train_dataset.get_energy_shift()
             davg, dstd = train_dataset.get_davg_dstd()
-        model, optimizer = self.load_model_optimizer(davg, dstd, energy_shift)
+        model, optimizer, scheduler = self.load_model_optimizer(davg, dstd, energy_shift)
         if not os.path.exists(self.dp_params.file_paths.model_store_dir):
             os.makedirs(self.dp_params.file_paths.model_store_dir)
         if self.dp_params.model_num == 1:
@@ -504,7 +519,7 @@ class dp_network:
                 )
             else:
                 loss, loss_Etot, loss_Etot_per_atom, loss_Force, loss_Ei, loss_egroup, loss_virial, loss_virial_per_atom, real_lr, Sij_max, loss_l1, loss_l2 = train(
-                    train_loader, model, self.criterion, optimizer, epoch, \
+                    train_loader, model, self.criterion, optimizer, scheduler, epoch, \
                         self.dp_params.optimizer_param.learning_rate, self.device, self.dp_params
                 )
             time_end = time.time()
@@ -601,7 +616,7 @@ class dp_network:
                 )
 
     def load_model_with_ckpt(self, davg, dstd, energy_shift):
-        model, optimizer = self.load_model_optimizer(davg, dstd, energy_shift)
+        model, optimizer, _ = self.load_model_optimizer(davg, dstd, energy_shift)
         return model
 
     def evaluate(self,num_thread = 1):

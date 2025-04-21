@@ -34,6 +34,8 @@ class InputParam(object):
         self.model_num = get_parameter("model_num", json_input, 1)
         self.recover_train = get_parameter("recover_train", json_input, True)
         self.max_neigh_num = get_parameter("max_neigh_num", json_input, 100)
+        self.save_step = get_parameter("save_step", json_input, None)
+        self.max_save_num = get_parameter("max_save_num", json_input, 10)
         self.profiling = get_parameter("profiling", json_input, False)#not realized
 
         self.set_feature_params(json_input)
@@ -176,7 +178,7 @@ class InputParam(object):
     def set_default_multi_gpu_info(self, json_input:dict):
         # multi GPU train params  these params not used
         # "number of data loading workers (default: 4)
-        self.workers = get_parameter("workers", json_input, 1)
+        self.workers = get_parameter("workers", json_input, 0)
         # dist training by horovod, when multi GPU train, need True,
         self.hvd = get_parameter("hvd", json_input, False)
         self.world_size = get_parameter("world_size", json_input, -1)
