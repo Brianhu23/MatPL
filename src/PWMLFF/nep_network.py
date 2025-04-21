@@ -160,8 +160,6 @@ class nep_network:
         # create model 
         # when running evaluation, nothing needs to be done with davg.npy
         # if does not use CosineAnnealingWarmRestarts, avg_atom_num = 1
-        adjusted_lr = self.input_param.optimizer_param.learning_rate * avg_atom_num**0.5
-
         model = NEP(self.input_param, energy_shift)
         model = model.to(self.training_type)
 
@@ -249,25 +247,25 @@ class nep_network:
         elif self.input_param.optimizer_param.opt_name == "ADAM":
             if self.input_param.optimizer_param.lambda_2 is None:
                 optimizer = optim.Adam(model.parameters(), 
-                                    lr=adjusted_lr)
+                                    lr=self.input_param.optimizer_param.learning_rate * avg_atom_num**0.5)
             else:
                 optimizer = optim.Adam(model.parameters(), 
-                                    lr=adjusted_lr, 
+                                    lr=self.input_param.optimizer_param.learning_rate * avg_atom_num**0.5, 
                                         weight_decay=self.input_param.optimizer_param.lambda_2)
             
         elif self.input_param.optimizer_param.opt_name == "ADAMW":
             if self.input_param.optimizer_param.lambda_2 is None:
                 optimizer = optim.AdamW(model.parameters(), 
-                                    lr=adjusted_lr)
+                                    lr=self.input_param.optimizer_param.learning_rate * avg_atom_num**0.5)
             else:
                 optimizer = optim.AdamW(model.parameters(), 
-                                    lr=adjusted_lr, 
+                                    lr=self.input_param.optimizer_param.learning_rate * avg_atom_num**0.5, 
                                         weight_decay=self.input_param.optimizer_param.lambda_2)
-
+        
         elif self.input_param.optimizer_param.opt_name == "SGD":
             optimizer = optim.SGD(
                 model.parameters(), 
-                adjusted_lr,
+                self.input_param.optimizer_param.learning_rate * avg_atom_num**0.5,
                 momentum=self.input_param.optimizer_param.momentum,
                 weight_decay=self.input_param.optimizer_param.weight_decay
             )
