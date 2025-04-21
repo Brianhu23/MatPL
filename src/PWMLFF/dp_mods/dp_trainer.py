@@ -5,6 +5,7 @@ import numpy as np
 import time
 from enum import Enum
 import torch
+import torch.nn as nn
 from torch.utils.data import Subset
 from torch.autograd import Variable
 from src.loss.dploss import dp_loss, adjust_lr
@@ -287,8 +288,15 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, start_lr,
                 )
             # import ipdb;ipdb.set_trace()
             loss.backward()
+            if args.optimizer_param.norm_type is not None:
+                nn.utils.clip_grad_norm_(model.parameters(), args.optimizer_param.max_norm, args.optimizer_param.norm_type)
+            elif args.optimizer_param.clip_value is not None:
+                nn.utils.clip_grad_value_(model.parameters(), args.optimizer_param.clip_value)
             optimizer.step()
 
+            if scheduler is not None:
+                scheduler.step()
+                
             loss_val = loss
             L1, L2 = print_l1_l2(model)
             if args.optimizer_param.lambda_2 is not None:
