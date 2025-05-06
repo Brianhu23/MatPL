@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# pwact>=0.3 pwdata>=0.4.7
+# MatPL-2025.3
+
 # 检查 ifort 编译器版本是否不小于19.1 和 MKL 库是否存在
 check_ifort_mkl() {
     if command -v ifort &> /dev/null; then
