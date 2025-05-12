@@ -8,7 +8,7 @@ List of modified records by Wu Xingxing (email stars_sparkling@163.com)
 4. Support GPUMD NEP shared bias and PWMLFF NEP independent bias forcefield
 
 We have made the following improvements based on NEP4
-http://doc.lonxun.com/PWMLFF/models/nep/NEP%20model/
+http://doc.lonxun.com/MatPL/models/nep/
 */
 
 /*
@@ -2609,7 +2609,7 @@ void NEP3_CPU::init_from_file(const std::string& potential_filename, const bool 
         printf("    the input nep4 potential file is from MatPL.\n");
       }
     } else {
-    printf("    parameter parsing error, the number of nep parameters [PWMLFF %d, GPUMD %d] does not match the text lines %d.\n", tmp, (tmp-paramb.num_types+1), neplinenums);
+    printf("    parameter parsing error, the number of nep parameters [MatPL %d, GPUMD %d] does not match the text lines %d.\n", tmp, (tmp-paramb.num_types+1), neplinenums);
     exit(1);
     }
   }
@@ -2713,7 +2713,7 @@ void NEP3_CPU::init_from_file(const std::string& potential_filename, const bool 
       std::cout << "    total number of parameters = " << annmb.num_para - paramb.num_types + 1 << ".\n";
 
     } else {
-      std::cout << "    the input nep potential file is from PWMLFF.\n";
+      std::cout << "    the input nep potential file is from MatPL.\n";
     
       std::cout << "    number of neural network parameters = "
                 << annmb.num_para - num_para_descriptor << ".\n";

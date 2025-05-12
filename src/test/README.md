@@ -1,5 +1,5 @@
 # pwmlff_auto_test
-This project is used for automated testing of PWMLFF and LAMMPS interfaces
+This project is used for automated testing of MatPL and LAMMPS interfaces
 
 # 操作命令，src/test 在当前目录下执行
 python auto_test.py  example/template_train.json
@@ -9,7 +9,7 @@ python auto_test.py  example/template_train.json
 
 # 增加测试案例
 
-在数据目录 `"path_prefix"` 下准备测试案例的json文件，如下例子（测试数据是raw_files），以及对应的训练 json 文件，在测试时，会将`测试数据` 以及设置的 `epoch` 自动写入json文件中，并使用该json文件中的参数做训练，训练完毕后，会自动将测试数据执行 `PWMLFF test ` 命令做推理。
+在数据目录 `"path_prefix"` 下准备测试案例的json文件，如下例子（测试数据是raw_files），以及对应的训练 json 文件，在测试时，会将`测试数据` 以及设置的 `epoch` 自动写入json文件中，并使用该json文件中的参数做训练，训练完毕后，会自动将测试数据执行 `MatPL test ` 命令做推理。
 
 在 `"train_inputs"` 中增加或者修改对应字典即可，每一条 dict 对应一个测试案例。
 

@@ -8,7 +8,7 @@ def comm_info():
     print("Compatible pwact: >= 0.2.0")
     print("Contact: support@pwmat.com")
     print("Citation: https://github.com/LonxunQuantum/MatPL")
-    print("Manual online: http://doc.lonxun.com/PWMLFF/")
+    print("Manual online: http://doc.lonxun.com/MatPL/")
     print("=" * 50)  
     print("\n\n")
 
@@ -58,5 +58,5 @@ def matpl_help():
         print(f"  - Example:     {cmd['example']}\n")
     
     print("\nFor more detailed command instructions, please refer to the online manual:\n")
-    print("http://doc.lonxun.com/PWMLFF/\n\n")
+    print("http://doc.lonxun.com/MatPL/\n\n")
 

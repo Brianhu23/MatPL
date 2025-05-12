@@ -4,7 +4,7 @@ This code is developed based on the GPUMD source code and adds ghost atom proces
   Support GPUMD NEP shared bias and PWMLFF NEP independent bias forcefield.
 
 We have made the following improvements based on NEP4
-http://doc.lonxun.com/PWMLFF/models/nep/NEP%20model/
+http://doc.lonxun.com/MatPL/models/nep/
 */
 
 /*
@@ -373,7 +373,7 @@ void NEP3::init_from_file(const char* file_potential, const bool is_rank_0, cons
   } else if (neplinenums == tmp) {
     is_gpumd_nep = false;
     if (print_potential_info) {
-      printf("    the input nep potential file is from PWMLFF.\n");
+      printf("    the input nep potential file is from MatPL.\n");
     }
   } else if (neplinenums  == (tmp -paramb.num_types + 1)) {
     is_gpumd_nep = true;
@@ -381,7 +381,7 @@ void NEP3::init_from_file(const char* file_potential, const bool is_rank_0, cons
       printf("    the input nep potential file is from GPUMD.\n");
     }
   } else {
-    printf("    parameter parsing error, the number of nep parameters [PWMLFF %d, GPUMD %d] does not match the text lines %d.\n", tmp, (tmp-paramb.num_types+1), neplinenums);
+    printf("    parameter parsing error, the number of nep parameters [MatPL %d, GPUMD %d] does not match the text lines %d.\n", tmp, (tmp-paramb.num_types+1), neplinenums);
     exit(1);
   }
 

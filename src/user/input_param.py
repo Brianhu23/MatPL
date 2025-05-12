@@ -335,13 +335,12 @@ class InputParam(object):
         
 def help_info():
     print("\n" + "=" * 50) 
-    print("         PWMLFF Basic Information")
+    print("         MatPL Basic Information")
     print("=" * 50) 
-    print("Version: 2025.02")
-    print("Compatible pwdata: >= 0.4.8")
-    print("Compatible pwact: >= 0.2.1")
-    print("Last Commit: 2025.03.05")
-    print("Git Hash: 7bdaa90da15a5bfca6a831e739ebdd67fca22299")
+    print("Version: 2025.03")
+    print("Compatible pwdata: >= 0.5.0")
+    print("Compatible pwact: >= 0.3.3")
+    print("Last Commit: 2025.05.07")
     print("Contact: support@pwmat.com")
     print("Citation: https://github.com/LonxunQuantum/PWMLFF")
     print("Manual online: http://doc.lonxun.com/PWMLFF/")

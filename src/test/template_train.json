@@ -7,7 +7,7 @@
             "number_node": 1,
             "gpu_per_node": 1,
             "cpu_per_node": 1,
-            "queue_name": "new3080ti,3080ti,3090",
+            "queue_name": "3080ti,3090",
             "custom_flags": [
             ],
             "source_list": [
@@ -19,7 +19,7 @@
             ]
         },
         {
-            "command": "PWMLFF",
+            "command": "MatPL",
             "env_type":"mcloud_gpu_usecpu",
             "group_size": 1,
             "number_node": 1,
@@ -47,7 +47,7 @@
             "number_node": 1,
             "gpu_per_node": 1,
             "cpu_per_node": 1,
-            "queue_name": "new3080ti,3080ti,3090",
+            "queue_name": "3080ti,3090",
             "custom_flags": [
             ],
             "source_list": [
@@ -110,7 +110,7 @@
             "number_node": 1,
             "gpu_per_node": 1,
             "cpu_per_node": 1,
-            "queue_name": "new3080ti,3080ti,3090",
+            "queue_name": "3080ti,3090",
             "custom_flags": [
             ],
             "source_list": [

@@ -1,7 +1,7 @@
 {
     "model_type": "NEP",
     "atom_type": [47, 79],
-    "model_load_file": "./model_record/dp_model.ckpt",
+    "model_load_file": "./model_record/nep_model.ckpt",
 
     "format":"pwmlff/npy",
     "test_data": [

@@ -1,7 +1,6 @@
 {
     "model_type": "DP",
     "atom_type": [3, 14, 6],
-    "max_neigh_num": 400,
     "optimizer": {
         "optimizer": "LKF",
         "epochs": 4,
@@ -13,14 +12,10 @@
         "kalman_nue": 0.9987,
         "train_energy": true,
         "train_force": true,
-        "train_ei": false,
         "train_virial": true,
-        "train_egroup": false,
         "pre_fac_force": 2.0,
         "pre_fac_etot": 1.0,
-        "pre_fac_ei": 1.0,
-        "pre_fac_virial": 1.0,
-        "pre_fac_egroup": 0.1
+        "pre_fac_virial": 1.0
     },
     "format":"pwmlff/npy",
     "train_data": [

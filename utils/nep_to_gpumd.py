@@ -167,7 +167,7 @@ def nep_ckpt_to_gpumd(cmd_list):
     with open(save_name, 'w') as wf:
         wf.writelines(nep_content)
     
-    print("Successfully converted from PWMLFF nep.model.ckpt to GPUMD nep.txt format!")
+    print("Successfully converted from MatPL nep.model.ckpt to GPUMD nep.txt format!")
     print("The result file is {}.".format(save_name))
     
 

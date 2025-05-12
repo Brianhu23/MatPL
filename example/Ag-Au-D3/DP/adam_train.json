@@ -4,8 +4,6 @@
         47,
         79
     ],
-    "max_neigh_num": 100,
-    "seed": 785887528,
     "model": {
         "descriptor": {
             "Rmax": 6.0,
@@ -35,7 +33,7 @@
         "train_virial": true
     },
     "format":"pwmlff/npy",
-    "data_train": [
+    "train_data": [
         "../PWdata_cpu/Ag10Au14",
         "../PWdata_cpu/Ag22Au10",
         "../PWdata_cpu/Ag28Au4",

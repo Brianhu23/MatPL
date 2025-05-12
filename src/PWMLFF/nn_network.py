@@ -468,14 +468,17 @@ class nn_network:
                         alive_atomic_energy=self.dp_params.file_paths.alive_atomic_energy, 
                         train_egroup = self.dp_params.optimizer_param.train_egroup,
                         save_flag=True)
-        self.val_loader  = self.load_data(
-                        feature_paths = self.dp_params.file_paths.valid_feature_path,
-                        data_shuffle=False, 
-                        batch_size=1,
-                        workers=self.dp_params.workers,
-                        alive_atomic_energy=self.dp_params.file_paths.alive_atomic_energy, 
-                        train_egroup = self.dp_params.optimizer_param.train_egroup,
-                        save_flag=False)
+        if len(self.dp_params.file_paths.valid_feature_path) > 0:
+            self.val_loader  = self.load_data(
+                            feature_paths = self.dp_params.file_paths.valid_feature_path,
+                            data_shuffle=False, 
+                            batch_size=1,
+                            workers=self.dp_params.workers,
+                            alive_atomic_energy=self.dp_params.file_paths.alive_atomic_energy, 
+                            train_egroup = self.dp_params.optimizer_param.train_egroup,
+                            save_flag=False)
+        else:
+            self.val_loader = None
         self.set_model_optimizer()
 
         """    

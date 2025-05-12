@@ -19,6 +19,15 @@ class OptimizerParam(object):
         self.max_norm    = get_parameter("max_norm", optimizer_dict, None)
         self.norm_type   = get_parameter("norm_type", optimizer_dict, None)
         self.clip_value  = get_parameter("clip_value", optimizer_dict, None)
+        if self.clip_value is not None and self.max_norm is not None:
+            raise Exception("ERROR! 'max_norm' and 'norm_type' for Norm clipping and 'clip_value' for value clipping cannot be set simultaneously.!")
+        if self.max_norm is not None:
+            if self.norm_type is None:
+                self.norm_type = 2
+            else:
+                if self.norm_type not in [1, 2]:
+                    raise Exception("ERROR! the input norm_type only could be set as '1' for L1 or '2' for L2!")
+        
         # learining rate,  https://zhuanlan.zhihu.com/p/261134624
         self.t_0    = get_parameter("t_0", optimizer_dict, None)
         self.t_mult   = get_parameter("t_mult", optimizer_dict, None)

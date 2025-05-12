@@ -4,8 +4,6 @@
         47,
         79
     ],
-    "max_neigh_num": 100,
-    "seed": 785887528,
     "model": {
         "descriptor": {
             "Rmax": 6.0,
