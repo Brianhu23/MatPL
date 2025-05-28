@@ -681,6 +681,7 @@ class nep_network:
         virial_label_list, virial_predict_list = [], []
         atom_num_list = []
         virial_index = [0, 1, 2, 4, 5, 8]
+        results = sorted(results, key=lambda x: x['idx'])
         for result in results:
             etot_rmse.append(result["etot_rmse"])
             etot_atom_rmse.append(result["etot_atom_rmse"])
