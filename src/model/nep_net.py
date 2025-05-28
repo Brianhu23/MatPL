@@ -61,10 +61,8 @@ class NEP(nn.Module):
                                                     #    self.nep_param["net_cfg"]["fitting_net"]["activation"], 
                                                     ))
         self.max_neigh_num = self.input_param.max_neigh_num
-        self.max_NN_radial = 100 
-        self.min_NN_radial = 100 
-        self.max_NN_angular = 100
-        self.min_NN_angular = 100
+        self.max_NN_radial = -1 
+        self.max_NN_angular = -1
 
     '''
     description: 

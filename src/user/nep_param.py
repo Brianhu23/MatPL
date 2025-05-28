@@ -30,6 +30,9 @@ class NepParam(object):
         self.nep_in_file = None
         self.nep_txt_file = None
         self.train_2b = True
+        self.max_NN_radial = None
+        self.max_NN_angular = None
+        self.max_nn_from_txt = False
 
     '''
     description: 
@@ -123,7 +126,10 @@ class NepParam(object):
             
         cutoffs = lines[1].split()
         self.cutoff = [float(cutoffs[1]), float(cutoffs[2])]
-
+        if len(cutoffs) > 3:
+            self.max_NN_radial, self.max_NN_angular = [int(cutoffs[3]), int(cutoffs[4])]
+            self.max_nn_from_txt = True
+            
         n_maxs =  lines[2].split() 
         self.n_max = [int(n_maxs[1]), int(n_maxs[2])]
 

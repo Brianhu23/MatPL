@@ -202,8 +202,6 @@ class nep_network:
             
             if "max_neighbor" in checkpoint.keys():
                 model.max_NN_radial, model.max_NN_angular = checkpoint["max_neighbor"]
-            else:
-                model.max_NN_radial, model.max_NN_angular = (100, 100)
             # scheduler.load_state_dict(checkpoint["scheduler"])
             print("=> loaded checkpoint '{}' (epoch {})"\
                     .format(model_path, checkpoint["epoch"]))
@@ -316,13 +314,16 @@ class nep_network:
         #energy_shift is same as energy_shift of upper; atom_map is the user input order
         model, optimizer, scheduler = self.load_model_optimizer(energy_shift, avg_atom_num=1, iterations=len(train_loader)) #train_datset.avg_image_atom
         
+
         max_NN_radial, min_NN_radial, max_NN_angular, min_NN_angular = \
                         calculate_neighbor_num_max_min(dataset=train_datset, device = self.device, num_workers=self.input_param.workers)
         
-        model.max_NN_radial  = max(model.max_NN_radial, max_NN_radial)
-        model.min_NN_radial  = min(model.min_NN_radial, min_NN_radial)
-        model.max_NN_angular = max(model.max_NN_angular, max_NN_angular)
-        model.min_NN_angular = min(model.min_NN_angular, min_NN_angular)
+        if self.input_param.nep_param.max_nn_from_txt:
+            model.max_NN_radial  = max(self.input_param.nep_param.max_NN_radial, max_NN_radial)
+            model.max_NN_angular = max(self.input_param.nep_param.max_NN_angular, max_NN_angular)
+        else:
+            model.max_NN_radial = max(model.max_NN_radial, max_NN_radial)
+            model.max_NN_angular = max(model.max_NN_angular, max_NN_angular)
 
         if model.q_scaler is None:
             q_scaler = calculate_neighbor_scaler(
@@ -505,7 +506,6 @@ class nep_network:
                     "energy_shift":energy_shift,
                     "max_neighbor": [model.max_NN_radial, model.max_NN_angular],
                     "q_scaler": model.get_q_scaler(),
-                    "max_neighbor": [model.max_NN_radial, model.max_NN_angular],
                     "atom_type_order": self.input_param.atom_type    #atom type order of davg/dstd/energy_shift
                     # "optimizer":optimizer.state_dict()
                     # "sij_max":Sij_max
@@ -755,9 +755,7 @@ class nep_network:
                         calculate_neighbor_num_max_min(dataset=train_datset, device = self.device)
         
         model.max_NN_radial  = max(model.max_NN_radial, max_NN_radial)
-        model.min_NN_radial  = min(model.min_NN_radial, min_NN_radial)
         model.max_NN_angular = max(model.max_NN_angular, max_NN_angular)
-        model.min_NN_angular = min(model.min_NN_angular, min_NN_angular)
     
         start = time.time()
         res_pd, etot_label_list, etot_predict_list, ei_label_list, ei_predict_list, force_label_list, force_predict_list, virial_label_list, virial_predict_list\
