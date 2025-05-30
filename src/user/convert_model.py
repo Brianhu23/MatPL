@@ -150,3 +150,46 @@ def read_structure_dp(ckpt):
         return model_dict, emb_net_size, fit_net_size, len(fit_net_nums), M2
     else:
         return None, None, None, None, None
+
+def get_model_type(model_load_path):
+    try:
+        _model_checkpoint = torch.load(model_load_path, map_location=torch.device("cpu"))
+        model_type = _model_checkpoint['json_file']['model_type']
+        if model_type == "DP":
+            return "DP"
+        elif model_type == "NN":
+            return "NN"
+        elif model_type == "NEP":
+            return "NEP"
+        return None
+    except Exception as e:
+        with open(model_load_path, 'r') as rf:
+            line = rf.readline()
+        if "nep" in line:
+            return "NEP"
+        else:
+            raise Exception("ERROR! The input model file cannot be parsed!")
+
+def is_nep_ckpt(model_load_path):
+    try:
+        _model_checkpoint = torch.load(model_load_path, map_location=torch.device("cpu"))
+        model_type = _model_checkpoint['json_file']['model_type']
+        if model_type == "NEP":
+            return True
+    except Exception as e:
+        with open(model_load_path, 'r') as rf:
+            line = rf.readline()
+        if "nep" in line:
+            return False
+    return False
+
+def is_nep_txt(model_load_path):
+    try:
+        _model_checkpoint = torch.load(model_load_path, map_location=torch.device("cpu"))
+        return False
+    except Exception as e:
+        with open(model_load_path, 'r') as rf:
+            line = rf.readline()
+        if "nep" in line:
+            return True
+    return False

@@ -393,15 +393,15 @@ std::tuple<double, double, double, double, double, double> PairMATPL::calc_max_e
     double num_ff_inv;
     int nlocal = atom->nlocal;
     // int *tag = atom->tag;
-    min_err = INFINITY;
-    min_err_ei = INFINITY;
-    max_err = -1.0;
-    max_err_ei = -1.0;
+    min_err = 10000;
+    min_err_ei = 10000;
+    max_err = 0.0;
+    max_err_ei = 0.0;
     num_ff_inv = 1.0 / num_ff;
 
-    max_mean_err_out = -1.0;
+    max_mean_err_out = 0.0;
     max_mean_err = 0.0;
-    max_mean_err_out = -1.0;
+    max_mean_err_out = 0.0;
     max_mean_ei = 0.0;
 
     for (ff_idx = 0; ff_idx < num_ff; ff_idx++) {
@@ -1145,20 +1145,22 @@ void PairMATPL::compute(int eflag, int vflag)
         // auto duration_convert_dim = std::chrono::duration_cast<std::chrono::microseconds>(end_convert_dim - start_convert_dim).count();
         
         // auto start_compute_large_box_optim = std::chrono::high_resolution_clock::now();
-        nep_gpu_models[0].compute_large_box_optim(
-        is_build_neighbor,
-        n_all, 
-        atom->nlocal,
-        list->inum,
-        nep_gpu_nm,
-        itype_convert_map.data(),
-        list->ilist,
-        list->numneigh,
-        firstneighbor_cpu.data(),
-        position_cpu.data(),
-        cpu_potential_per_atom.data(), 
-        cpu_force_per_atom.data(), 
-        cpu_total_virial.data());
+        if (nlocal > 0) {//If there is a vacuum layer, in a multi-core, a block of a certain core has no atoms (local atoms are 0, ghost atoms are not 0)
+            nep_gpu_models[0].compute_large_box_optim(
+            is_build_neighbor,
+            n_all, 
+            atom->nlocal,
+            list->inum,
+            nep_gpu_nm,
+            itype_convert_map.data(),
+            list->ilist,
+            list->numneigh,
+            firstneighbor_cpu.data(),
+            position_cpu.data(),
+            cpu_potential_per_atom.data(), 
+            cpu_force_per_atom.data(), 
+            cpu_total_virial.data());
+        }
         // auto end_compute_large_box_optim = std::chrono::high_resolution_clock::now();
         // auto duration_compute_large_box_optim = std::chrono::duration_cast<std::chrono::microseconds>(end_compute_large_box_optim - start_compute_large_box_optim).count();
 
@@ -1235,21 +1237,22 @@ void PairMATPL::compute(int eflag, int vflag)
             std::vector<double> cpu_potential_per_atom(list->inum, 0.0);
             std::vector<double> cpu_force_per_atom(n_all * 3, 0.0);
             std::vector<double> cpu_total_virial(6, 0.0);
-            
-            nep_gpu_models[ff_idx].compute_large_box_optim(
-            is_build_neighbor,
-            n_all, 
-            atom->nlocal,
-            list->inum,
-            nep_gpu_nm,
-            itype_convert_map.data(),
-            list->ilist,
-            list->numneigh,
-            firstneighbor_cpu.data(),
-            position_cpu.data(),
-            cpu_potential_per_atom.data(), 
-            cpu_force_per_atom.data(), 
-            cpu_total_virial.data());
+            if (nlocal > 0) {
+                nep_gpu_models[ff_idx].compute_large_box_optim(
+                is_build_neighbor,
+                n_all, 
+                atom->nlocal,
+                list->inum,
+                nep_gpu_nm,
+                itype_convert_map.data(),
+                list->ilist,
+                list->numneigh,
+                firstneighbor_cpu.data(),
+                position_cpu.data(),
+                cpu_potential_per_atom.data(), 
+                cpu_force_per_atom.data(), 
+                cpu_total_virial.data());
+            }
 
             for (int i = 0; i < list->inum; ++i) {
                 e_atom_n[ff_idx][i] = cpu_potential_per_atom[i];
@@ -1302,11 +1305,11 @@ void PairMATPL::compute(int eflag, int vflag)
         // max_err_ei = result.second;
 
         MPI_Allreduce(&max_err, &global_max_err, 1, MPI_DOUBLE, MPI_MAX, world);
-        MPI_Allreduce(&min_err, &global_min_err, 1, MPI_DOUBLE, MPI_MAX, world);
+        MPI_Allreduce(&min_err, &global_min_err, 1, MPI_DOUBLE, MPI_MIN, world);
         MPI_Allreduce(&max_mean_err_out, &global_max_mean_err, 1, MPI_DOUBLE, MPI_MAX, world);
 
         MPI_Allreduce(&max_err_ei, &global_max_err_ei, 1, MPI_DOUBLE, MPI_MAX, world);
-        MPI_Allreduce(&min_err_ei, &global_min_err_ei, 1, MPI_DOUBLE, MPI_MAX, world);
+        MPI_Allreduce(&min_err_ei, &global_min_err_ei, 1, MPI_DOUBLE, MPI_MIN, world);
         MPI_Allreduce(&max_mean_ei_out, &global_max_mean_err_ei, 1, MPI_DOUBLE, MPI_MAX, world);
 
         max_err_list.push_back(global_max_err);
@@ -1316,8 +1319,8 @@ void PairMATPL::compute(int eflag, int vflag)
             if (me == 0) {
                 // fprintf(explrError_fp, "%9d %16.9f %16.9f\n", (max_err_list.size()-1)*out_freq, global_max_err, global_max_err_ei);
                 fprintf(explrError_fp, "%9d %16.9f %16.9f %16.9f %16.9f %16.9f %16.9f\n", 
-                            current_timestep, max_mean_err_out, min_err, max_err, 
-                                max_mean_ei_out, min_err_ei, max_err_ei);
+                            current_timestep, global_max_mean_err, global_min_err, global_max_err, 
+                                global_max_mean_err_ei, global_min_err_ei, global_max_err_ei);
                 fflush(explrError_fp);
             } 
         }

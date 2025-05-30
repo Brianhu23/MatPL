@@ -3,6 +3,7 @@ from src.mods.infer import Inference
 import os 
 import glob
 import numpy as np
+from utils.nep_to_gpumd import get_atomic_name_from_number, check_atom_type_name
 def infer_main(sys_cmd:list[str]):
     ckpt_file = sys_cmd[0]
     sys_index = 0
@@ -11,87 +12,128 @@ def infer_main(sys_cmd:list[str]):
     sys_index = 2
     use_nep_txt = False
     device = None
-    if format is not None and format.lower() == "lammps/dump":
-        atom_typs = sys_cmd[sys_index+1:]
-        if isinstance(atom_typs, list) is False:
-            atom_typs = [atom_typs]
-        print("Structure atom type is ", atom_typs)
+    
+    atom_names = sys_cmd[sys_index+1:]
+    if isinstance(atom_names, list) is False:
+        atom_names = [atom_names]
+    if format.lower() == "lammps/dump" or format.lower() == "lammps/lmp":
+        if atom_names is None:
+            raise Exception("Error! For lammps/dump or lammps/lmp file, the atom type list of config should be set!")
+        try:
+            atom_types = get_atomic_name_from_number(atom_names)
+        except Exception as e:
+            if check_atom_type_name(atom_names):
+                atom_types = atom_names
+            else:
+                raise Exception("Error! The input atom_type {} is not valid, please check!".format(" ".join(atom_names)))
     else:
-        atom_typs = None
-    try:
-        model_checkpoint = torch.load(ckpt_file, map_location = torch.device("cpu"))
-        model_type = model_checkpoint['json_file']['model_type'].upper()
-    except Exception as e:
-        with open(ckpt_file, 'r') as rf:
-            line = rf.readline()
-        if 'nep' in line:
-            model_type = "NEP"
-            use_nep_txt= True
-        else:
-            raise Exception("Cannot recognize the model! {}".foramt(ckpt_file))
-    if model_type == "DP":
-        device = torch.device("cpu")
-        if torch.cuda.is_available():
-            print("Warnning! Modify the GPU device to CPU for the DP infer interface!") # dp gpu interface has error
-    elif model_type == "NEP":
-        use_nep_txt = True
-    else:
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    infer = Inference(ckpt_file, device, use_nep_txt)
-    if model_type == "DP":
-        infer.inference(structures_file, format, atom_typs)
-    elif model_type == "NEP":
-        infer.inference_nep_txt(structures_file, format, atom_typs)
+        atom_types = None
 
-def model_devi(ckpt_file_list, structure_dir, format, save_path):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cpu")
+    infer = Inference(ckpt_file, device, use_nep_txt)
+    if os.path.isdir(structures_file):
+        traj_list = glob.glob(os.path.join(structures_file, "*"))
+        try:
+            trajs = sorted(traj_list, key=lambda x:int(os.path.basename(x).split('.')[0]))
+        except Exception:
+            trajs = sorted(traj_list)
+    else:
+        trajs = [structures_file]
+    for ti, traj in enumerate(trajs):
+        if infer.model_type == "DP":
+            infer.inference(traj, format, atom_types)
+        elif infer.model_type == "NEP":
+            infer.inference_nep_txt(traj, format, atom_types)
+
+def model_devi(ckpt_file_list, structure_dir, format, save_path, atom_names:list[str]=None):
+    # set atom_types in trajs
+    if format.lower() == "lammps/dump" or format.lower() == "lammps/lmp":
+        if atom_names is None:
+            raise Exception("Error! For lammps/dump or lammps/lmp file, the atom type list of config should be set by '-t'!")
+        try:
+            atom_types = get_atomic_name_from_number(atom_names)
+        except Exception as e:
+            if check_atom_type_name(atom_names):
+                atom_types = atom_names
+            else:
+                raise Exception("The input '-t' or '--atom_type': '{}' is not valid, please check the input".format(" ".join(atom_names)))
+    else:
+        atom_types = None
+    
+    device = torch.device("cpu") # "gpu has an error when calculate force /2025/5/30"
     if os.path.isdir(structure_dir):
         traj_list = glob.glob(os.path.join(structure_dir, "*"))
-        trajs = sorted(traj_list, key = lambda x : int(os.path.basename(x).split(".")[0]))
+        try:
+            trajs = sorted(traj_list, key=lambda x:int(os.path.basename(x).split('.')[0]))
+        except Exception:
+            trajs = sorted(traj_list)
     else:
         trajs = [structure_dir]
-    force_list = []
-    Etot_list = []
-    Ei_list = []
-    for mi, model in enumerate(ckpt_file_list):
-        force_i = []
-        ei_i = []
-        Etot_i = []
-        infer = Inference(model, device)
-        for ti, traj in enumerate(trajs):
-            Etot, Ei, Force, Egroup, Virial = infer.inference(traj, format)
-            force_i.append(Force)
-            ei_i.append(Ei)
-            Etot_i.append(Etot)
-        force_list.append(force_i)
-        Etot_list.append(Etot_i)
-        Ei_list.append(ei_i)
-    # calculate model deviation
-    print()
-    ei = np.squeeze(np.array(Ei_list))
-    force = np.squeeze(np.array(force_list))
-    etot = np.squeeze(np.array(Etot_list))
+    headline = "#   avg_devi_f       min_devi_f       max_devi_f       avg_devi_e       min_devi_e       max_devi_e\n"
 
-    avg_force = np.mean(force, axis=0)
-    # max_force = np.full([len(ckpt_file_list), avg_force.shape[0]], 0)
-    max_force = []
-    for i in range(0, len(ckpt_file_list)):
-        tmp_error_1  = force[i]-avg_force
-        tmp_error_2  = np.square(tmp_error_1)
-        tmp_error_3  = np.sqrt(np.sum(tmp_error_2, axis=-1))
-        max_force.append(np.max(tmp_error_3, axis=-1))
-    d_max_force = np.array(max_force)
-    res_devi_foce = np.max(d_max_force, axis=0)
-    avg_ei = np.mean(ei, axis=0)
-    # max_ei = np.full([len(ckpt_file_list), avg_ei.shape[0]], 0)
-    max_ei = []
-    for i in range(0, len(ckpt_file_list)):
-        tmp_error_1 = ei[i]-avg_ei
-        tmp_error_2 = np.abs(tmp_error_1)
-        max_ei.append(np.max(tmp_error_2, axis=-1))
-    d_max_ei = np.array(max_ei)
-    res_devi_ei = np.max(d_max_ei, axis=0)
-    print("model deviation of Ei:")
-    print(res_devi_ei)
-    print("model deviation of Force:")
-    print(res_devi_foce)
+    with open(save_path, 'w') as wf:
+        wf.write(headline)
+    model_lists = []
+    for mi, model in enumerate(ckpt_file_list):
+        model_lists.append(Inference(model, device))
+
+    for ti, traj in enumerate(trajs):
+        force_i = {}
+        ei_i = {}
+        Etot_i = {}
+        for id, model in enumerate(model_lists):
+            force_i[id] = []
+            ei_i[id] = []
+            Etot_i[id] = []
+            
+            if model.model_type == "DP":
+                _etot_list, _ei_list, _force_list, _virial_list = model.inference(traj, format, atom_names=atom_types, do_deviation=True)
+            elif model.model_type == "NEP":
+                _etot_list, _ei_list, _force_list, _virial_list = model.inference_nep_txt(traj, format, atom_names=atom_types, do_deviation=True)
+            
+            for idj in range(0, len(_etot_list)):
+                force_i[id].append(_force_list[idj])
+                ei_i[id].append(_ei_list[idj])
+                Etot_i[id].append(_etot_list[idj])
+        
+        for idj in range(0, len(Etot_i[0])):
+            # calculate model deviation
+            ei = np.squeeze(np.array([ei_i[_][idj] for _ in range(0, len(model_lists))]))
+            force = np.squeeze(np.array([force_i[_][idj] for _ in range(0, len(model_lists))]))
+            etot = np.squeeze(np.array([Etot_i[_][idj] for _ in range(0, len(model_lists))]))
+
+            avg_force = np.mean(force, axis=0)
+            # max_force = np.full([len(ckpt_file_list), avg_force.shape[0]], 0)
+            max_force = []
+            min_force = []
+            mean_force= []
+            for i in range(0, len(ckpt_file_list)):
+                tmp_error_1  = np.sum(np.square(force[i]-avg_force), axis=-1)
+                tmp_error_2  = np.sqrt(tmp_error_1)
+                max_force.append(np.max(tmp_error_2))
+                min_force.append(np.min(tmp_error_2))
+                mean_force.append(tmp_error_1)
+            res_devi_foce = np.max(np.array(max_force))
+            res_devi_min_force = np.min(np.array(min_force))
+            res_devi_mean_force= np.max(np.sqrt(np.mean(np.array(mean_force), axis=0)))
+            avg_ei = np.mean(ei, axis=0)
+            # max_ei = np.full([len(ckpt_file_list), avg_ei.shape[0]], 0)
+            max_ei = []
+            min_ei = []
+            mean_ei= []
+            for i in range(0, len(ckpt_file_list)):
+                tmp_error_2 = np.abs(ei[i]-avg_ei)
+                max_ei.append(np.max(tmp_error_2))
+                min_ei.append(np.min(tmp_error_2))
+                mean_ei.append(tmp_error_2**2)
+            res_devi_ei = np.max(np.array(max_ei))
+            res_devi_min_ei  = np.min(np.array(min_ei))
+            res_devi_mean_ei = np.max(np.sqrt(np.mean(np.array(mean_ei), axis=0)))
+            with open(save_path, 'a') as wf:
+                line = "    {:<17.6f}{:<17.6f}{:<17.6f}{:<17.6f}{:<17.6f}{:<17.6f}\n".format(
+                    res_devi_mean_force, res_devi_min_force, res_devi_foce,
+                    res_devi_mean_ei, res_devi_min_ei, res_devi_ei
+                )
+                wf.write(line)
+                print(line)
+

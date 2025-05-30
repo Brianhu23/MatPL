@@ -56,15 +56,16 @@ if __name__ == "__main__":
         elif cmd_type == "model_devi".upper():
             parser = argparse.ArgumentParser()
             parser.add_argument('-m', '--model_list', help='specify input model files', nargs='+', type=str, default=None)
+            parser.add_argument('-t', '--atom_type', help='specify the atom type of configs for lammps/dump file', nargs='+', type=str, default=None)
             parser.add_argument('-f', '--format', help="specify input structure format, default is 'lammps/dump'", type=str, default="lammps/dump")
-            parser.add_argument('-s', '--savepath', help='specify stored directory', type=str, default='model_devi.out')
+            parser.add_argument('-s', '--savename', help='specify stored file name', type=str, default='matpl_model_devi.out')
             parser.add_argument('-c', '--config', help='specify structure dir', type=str, default='trajs')
             parser.add_argument('-w', '--work_dir', help='specify work dir', type=str, default='./')
             args = parser.parse_args(sys.argv[2:])
             print(args.work_dir)
             os.chdir(args.work_dir)
 
-            model_devi(args.model_list, args.config, format=args.format, save_path=args.savepath) # config or poscar
+            model_devi(args.model_list, args.config, format=args.format, save_path=args.savename, atom_names=args.atom_type) # config or poscar
 
         elif cmd_type == "kpu".upper():
             parser = argparse.ArgumentParser()
