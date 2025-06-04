@@ -1,0 +1,16 @@
+#!/bin/sh
+#SBATCH --job-name=nepdemo
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --gres=gpu:1
+#SBATCH --gpus-per-task=1
+#SBATCH --partition=gpu
+
+
+source  /share/app/MATPL/MatPL-2025.3/matpl-env.sh
+
+MATPL train linear_train.json
+
+MATPL test linear_test.json
+
+

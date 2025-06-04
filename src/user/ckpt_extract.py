@@ -85,7 +85,7 @@ def script_nep_model(model_checkpoint, ckpt_file, script_save_name:None):
     nep_param.inference = True
     nep_trainer = nep_network(nep_param)
     # Step 3. 初始化 NEP model
-    model, optimizer = nep_trainer.load_model_optimizer(energy_shift)
+    model, optimizer, _ = nep_trainer.load_model_optimizer(energy_shift) # noused
     # Step 4. 
     torch_script_module = torch.jit.script(model)
     torch_script_path = os.path.dirname(os.path.abspath(ckpt_file))

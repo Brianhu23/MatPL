@@ -4,12 +4,18 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:1
 #SBATCH --gpus-per-task=1
-#SBATCH --partition=3080ti,3090
+#SBATCH --partition=gpu
 
-source /share/app/MATPL/MatPL-2025.3/env.sh
+source /share/app/MATPL/MatPL-2025.3/matpl-env.sh
 
 MATPL train dp_train.json
 
 MATPL test dp_test.json
+
+cd model_record
+
+matpl script dp_model.ckpt
+
+cp dp_jit.pt ../dp_lmps/
 
 
