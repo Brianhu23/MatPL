@@ -439,7 +439,7 @@ class dp_network:
         if davg is None:
             energy_shift = train_dataset.get_energy_shift()
             davg, dstd = train_dataset.get_davg_dstd()
-        model, optimizer, scheduler = self.load_model_optimizer(davg, dstd, energy_shift)
+        model, optimizer, scheduler = self.load_model_optimizer(davg, dstd, energy_shift, iterations=len(train_loader))
         if not os.path.exists(self.dp_params.file_paths.model_store_dir):
             os.makedirs(self.dp_params.file_paths.model_store_dir)
         if self.dp_params.model_num == 1:

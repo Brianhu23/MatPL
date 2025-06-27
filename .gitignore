@@ -1,4 +1,6 @@
 # Generated files
+datas
+datas/*
 *.o
 *.x
 *.r

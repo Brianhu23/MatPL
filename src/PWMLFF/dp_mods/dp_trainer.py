@@ -66,12 +66,12 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, start_lr,
         data_time.update(time.time() - end)
 
         nr_batch_sample = sample_batches["Ei"].shape[0]
-        global_step = (epoch - 1) * len(train_loader) + i * nr_batch_sample
-        real_lr = adjust_lr(global_step, start_lr, \
-                            args.optimizer_param.stop_step, args.optimizer_param.decay_step, args.optimizer_param.stop_lr) #  stop_step, decay_step
+        # global_step = (epoch - 1) * len(train_loader) + i * nr_batch_sample
+        # real_lr = adjust_lr(global_step, start_lr, \
+        #                     args.optimizer_param.stop_step, args.optimizer_param.decay_step, args.optimizer_param.stop_lr) #  stop_step, decay_step
 
-        for param_group in optimizer.param_groups:
-            param_group["lr"] = real_lr * (nr_batch_sample**0.5)
+        # for param_group in optimizer.param_groups:
+        #     param_group["lr"] = real_lr * (nr_batch_sample**0.5)
 
         if scheduler is None:
             global_step = (epoch - 1) * len(train_loader) + i * nr_batch_sample
