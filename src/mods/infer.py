@@ -175,6 +175,45 @@ class Inference(object):
                     print("\n")
             return etot_list, ei_list, force_list, virial_list
 
+    def ase_dp_infer(self, lattice, frac_postions, symbols): # for dp infer 
+        Egroup = 0
+        model_config = self.model.config
+        m_neigh = self.model.maxNeighborNum
+        Rc_M = self.model.Rmax
+        Rc_type = np.array([(_['Rc']) for _ in model_config["atomType"]])
+        Rm_type = np.array([(_['Rm']) for _ in model_config["atomType"]])
+        input_atom_types = np.array(self.model.atom_type)
+        atom_type_list = get_atomic_number_from_name(symbols) # the atom type lists of per atom in config
+        atom_type = np.unique(atom_type_list) # the atom type of config
+        type_maps = np.array(type_map(atom_type_list, input_atom_types)).reshape(1, -1)
+
+        list_neigh, dR_neigh, max_ri, Egroup_weight, Divider, Egroup = \
+            find_neighbore(type_maps, 
+                            frac_postions, 
+                            lattice, 
+                            frac_postions.shape[0], 
+                            None, 
+                            self.model.ntypes, 
+                            Rc_type, 
+                            Rm_type, 
+                            m_neigh, 
+                            Rc_M, 
+                            Egroup
+            )
+
+        list_neigh = Variable(torch.tensor(np.expand_dims(list_neigh, axis=0)).int().to(self.device))
+        type_maps = Variable(torch.tensor(type_maps, dtype=torch.int32).to(self.device))
+        atom_types = Variable(torch.tensor(np.array(atom_type), dtype=torch.int32).to(self.device))
+        ImageDR = Variable(torch.tensor(np.expand_dims(dR_neigh, axis=0)).to(self.device))
+
+        Etot, Ei, Force, Egroup, Virial = self.model(list_neigh, type_maps[0], atom_types, ImageDR, 0, None, None)
+        Etot = Etot.squeeze(0).cpu().detach().numpy()
+        Ei = Ei.squeeze(0).cpu().detach().numpy()
+        Force = Force.squeeze(0).cpu().detach().numpy()
+        Virial = Virial.squeeze(0).cpu().detach().numpy()
+
+        return Etot, Ei, Force, Virial
+
     '''
     description: 
     not used, this function is replaced by Config when doing infer work
@@ -222,12 +261,6 @@ class Inference(object):
         return data
 
     def inference_nep_txt(self, structrue_file, format="pwmat/config", atom_names=None, do_deviation=False):
-        # if torch.cuda.is_available():
-        #     from src.feature.NEP_GPU import nep3_module
-        #     calc = nep3_module.NEP3()
-        #     calc.init_from_file(self.ckpt_file, is_rank_0=True, in_device_id=0)
-        # else:
-
         # infer = Save_Data(data_path=structrue_file, format=format)
         image_read = Config(data_path=structrue_file, format=format, atom_names=atom_names).images
         if not isinstance(image_read, list): # for lammps/dumps or movement .images will be list
@@ -283,6 +316,25 @@ class Inference(object):
                     print("\n")
                 
         return etot_list, ei_list, force_list, virial_list
+
+    def ase_nep_infer(self, lattice, cart_postions, symbols):
+        # infer = Save_Data(data_path=structrue_file, format=format)
+        input_atom_types = np.array(self.model_atom_type)
+        atom_nums = cart_postions.shape[0]
+        atom_type_list = get_atomic_number_from_name(symbols) # the atom type lists of per atom in config
+        type_maps = np.array(type_map(atom_type_list, input_atom_types)).reshape(1, -1)
+        ei_predict, force_predict, virial_predict = self.calc.inference(
+                    list(type_maps[0]), 
+                    list(np.array(lattice).transpose(1, 0).reshape(-1)), 
+                    np.array(cart_postions).transpose(1, 0).reshape(-1)
+            )
+
+        ei_predict   = np.array(ei_predict).reshape(atom_nums)
+        force_predict = np.array(force_predict).reshape(3, atom_nums).transpose(1, 0)
+        virial_predict = np.array(virial_predict)
+        etot_predict = np.sum(ei_predict)
+
+        return etot_predict, ei_predict, force_predict, virial_predict
 
     # def inference_nep(self, structrue_file, format="pwmat/config", atom_names=None):
     #     Ei = np.zeros(1)

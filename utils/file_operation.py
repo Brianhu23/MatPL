@@ -3,6 +3,21 @@ import shutil
 import filecmp
 
 import numpy as np
+import torch
+
+def check_model_type(model_load_path):
+    try:
+        _model_checkpoint = torch.load(model_load_path, map_location=torch.device("cpu"))
+        model_type = _model_checkpoint['json_file']['model_type']
+    except Exception as e:
+        with open(model_load_path, 'r') as rf:
+            line = rf.readline()
+        if "nep" not in line:
+            raise Exception("ERROR! The input model file cannot be parsed!")
+        else:
+            model_type  = "NEP"
+    return model_type
+
 def write_line_to_file(file_path, line, write_patthen="w"):
     with open(file_path, write_patthen) as wf:
         wf.write(line)
