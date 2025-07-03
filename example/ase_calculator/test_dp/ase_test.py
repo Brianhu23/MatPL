@@ -30,14 +30,12 @@ def atoms2xyzstr(atoms):
 nep_path   = "dp_model.ckpt"
 train_path = "train.xyz"
 output_file = "ase_out.xyz"
-atoms = io.read(train_path)
 # test
-
 traj = io.read(train_path, index=":")
 calc = MatPL_calculator(nep_path)
 f = open(output_file, "w")
 for i in range(len(traj)):
     atoms = traj[i]
-    atoms.calc = calc
+    atoms.calc = calc #or atoms.set_calculator(calc) 
     f.write(atoms2xyzstr(atoms))
 f.close()

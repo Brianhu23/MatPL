@@ -68,7 +68,7 @@ return {*}
 author: wuxingxing
 '''
 def extract_model(nep_path:str):
-    model = torch.load(nep_path, map_location=torch.device('cpu'))
+    model = torch.load(nep_path, map_location=torch.device('cpu'), weights_only=False)
     model_type = model['json_file']['model_type']
     if model_type.upper() != "NEP":
         raise Exception("Error! the input model is not NEP model, please check the model!")

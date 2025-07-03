@@ -42,7 +42,7 @@ def nep_train(input_json: json, cmd:str):
 def nep_test(input_json: json, cmd:str):
     model_load_path = get_parameter("model_load_file", input_json, None)
     try:
-        _model_checkpoint = torch.load(model_load_path, map_location=torch.device("cpu"))
+        _model_checkpoint = torch.load(model_load_path, map_location=torch.device("cpu"), weights_only=False)
         nep_content, model_atom_type, atom_names = extract_model(model_load_path)
         model_load_path = os.path.join(os.path.dirname(os.path.abspath(model_load_path)), "tmp_pwmlff_nep_test.txt")
         with open(model_load_path, 'w') as wf:
@@ -90,7 +90,7 @@ def nep_test(input_json: json, cmd:str):
     """
     else: ckpt file test
         # load from nep.ckpt file
-        model_checkpoint = torch.load(model_load_path, map_location=torch.device("cpu"))
+        model_checkpoint = torch.load(model_load_path, map_location=torch.device("cpu"), weights_only=False)
         json_dict_train = model_checkpoint["json_file"]
         model_checkpoint["json_file"]["datasets_path"] = []
         json_dict_train["optimizer"] = {}
@@ -109,7 +109,7 @@ def nep_test(input_json: json, cmd:str):
 def nep_test_ckpt(input_json: json, cmd:str):
 
     model_load_path = get_required_parameter("model_load_file", input_json)
-    model_checkpoint = torch.load(model_load_path, map_location=torch.device("cpu"))
+    model_checkpoint = torch.load(model_load_path, map_location=torch.device("cpu"), weights_only=False)
     json_dict_train = model_checkpoint["json_file"]
     model_checkpoint["json_file"]["datasets_path"] = []
     json_dict_train["train_data"] = []

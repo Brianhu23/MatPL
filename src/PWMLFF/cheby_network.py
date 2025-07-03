@@ -306,13 +306,13 @@ class cheby_network:
             if os.path.isfile(model_path):
                 print("=> loading checkpoint '{}'".format(model_path))
                 if not torch.cuda.is_available():
-                    checkpoint = torch.load(model_path,map_location=torch.device('cpu') )
+                    checkpoint = torch.load(model_path,map_location=torch.device('cpu') , weights_only=False)
                 elif self.cheby_param.gpu is None:
-                    checkpoint = torch.load(model_path)
+                    checkpoint = torch.load(model_path, weights_only=False)
                 elif torch.cuda.is_available():
                     # Map model to be loaded to specified single gpu.
                     loc = "cuda:{}".format(self.cheby_param.gpu)
-                    checkpoint = torch.load(model_path, map_location=loc)
+                    checkpoint = torch.load(model_path, map_location=loc, weights_only=False)
                 # start afresh
                 if self.cheby_param.optimizer_param.reset_epoch:
                     self.cheby_param.optimizer_param.start_epoch = 1
@@ -602,7 +602,7 @@ class cheby_network:
         return model
     
     def load_stat_from_checkpoint(self, model_path):
-        model_checkpoint = torch.load(model_path,map_location=torch.device("cpu"))
+        model_checkpoint = torch.load(model_path,map_location=torch.device("cpu"), weights_only=False)
         scaler = model_checkpoint['scaler']
         atom_type_order = model_checkpoint['atom_type_order']
         energy_shift = model_checkpoint['energy_shift']

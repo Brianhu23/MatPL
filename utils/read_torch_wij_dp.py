@@ -124,7 +124,7 @@ fittingNet_output = 'fitting.net'
 
 pt_name = r"record/model/better.pt" # modify according to your need 
 
-raw = torch.load(pt_name,map_location=torch.device("cpu"))['model']
+raw = torch.load(pt_name,map_location=torch.device("cpu"), weights_only=False)['model']
 tensor_list = list(raw.keys())
 
 #determining # of networks 

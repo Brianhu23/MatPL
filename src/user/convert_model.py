@@ -6,7 +6,7 @@ from src.PWMLFF.dp_network import dp_network
 from src.PWMLFF.dp_mods.dp_trainer import train_KF, save_checkpoint
 
 def conver_to_dp_torch2_version(model_file, atom_type, data, format, savename, save_dir, davg_dir, data_dict=None):
-    ckpt = torch.load(model_file, map_location="cpu")
+    ckpt = torch.load(model_file, map_location="cpu", weights_only=False)
     state_dict_list = list(ckpt['state_dict'].keys())
     if "embedding_net.0.layers.0.weight" in state_dict_list[0]:
         print("The model input is dp torch2 version, does not need convert!")
@@ -153,7 +153,7 @@ def read_structure_dp(ckpt):
 
 def get_model_type(model_load_path):
     try:
-        _model_checkpoint = torch.load(model_load_path, map_location=torch.device("cpu"))
+        _model_checkpoint = torch.load(model_load_path, map_location=torch.device("cpu"), weights_only=False)
         model_type = _model_checkpoint['json_file']['model_type']
         if model_type == "DP":
             return "DP"
@@ -172,7 +172,7 @@ def get_model_type(model_load_path):
 
 def is_nep_ckpt(model_load_path):
     try:
-        _model_checkpoint = torch.load(model_load_path, map_location=torch.device("cpu"))
+        _model_checkpoint = torch.load(model_load_path, map_location=torch.device("cpu"), weights_only=False)
         model_type = _model_checkpoint['json_file']['model_type']
         if model_type == "NEP":
             return True
@@ -185,7 +185,7 @@ def is_nep_ckpt(model_load_path):
 
 def is_nep_txt(model_load_path):
     try:
-        _model_checkpoint = torch.load(model_load_path, map_location=torch.device("cpu"))
+        _model_checkpoint = torch.load(model_load_path, map_location=torch.device("cpu"), weights_only=False)
         return False
     except Exception as e:
         with open(model_load_path, 'r') as rf:

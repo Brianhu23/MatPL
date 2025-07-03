@@ -59,7 +59,7 @@ def extract_model_para(config:dict, dp_params:InputParam):
     embedingNet_output = 'embeding.net' 
     fittingNet_output = 'fitting.net'
     
-    model_checkpoint = torch.load(extract_model_name,map_location=torch.device("cpu"))
+    model_checkpoint = torch.load(extract_model_name,map_location=torch.device("cpu"), weights_only=False)
     raw = model_checkpoint['state_dict']
     
     has_module = "module." if "module" in list(raw.keys())[0] else ""
@@ -316,7 +316,7 @@ def dump(item, f):
     f.write('\n')
 
 def load_davg_dstd_from_checkpoint(model_path):
-    model_checkpoint = torch.load(model_path,map_location=torch.device("cpu"))
+    model_checkpoint = torch.load(model_path,map_location=torch.device("cpu"), weights_only=False)
     davg = model_checkpoint['davg']
     dstd = model_checkpoint['dstd']
     atom_type_order = model_checkpoint['atom_type_order']
@@ -326,7 +326,7 @@ def load_davg_dstd_from_checkpoint(model_path):
     return davg, dstd, atom_type_order, energy_shift
 
 def load_atomtype_energyshift_from_checkpoint(model_path):
-    model_checkpoint = torch.load(model_path,map_location=torch.device("cpu"))
+    model_checkpoint = torch.load(model_path,map_location=torch.device("cpu"), weights_only=False)
     atom_type_order = model_checkpoint['atom_type_order']
     energy_shift = model_checkpoint['energy_shift']
     

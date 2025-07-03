@@ -56,7 +56,7 @@ class Inference(object):
     author: wuxingxing
     '''
     def load_dp_model(self, ckpt_file: str):
-        model_checkpoint = torch.load(ckpt_file, map_location = torch.device("cpu"))
+        model_checkpoint = torch.load(ckpt_file, map_location = torch.device("cpu"), weights_only=False)
         json_dict_train = model_checkpoint["json_file"]
         json_dict_train["model_load_file"] = ckpt_file
         json_dict_train["datasets_path"] = []

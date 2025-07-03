@@ -45,7 +45,7 @@ def read_wij():
     pt_name = arg_list[0]
 
     pt_file=os.path.join(pt_name)
-    chpt = torch.load(pt_file,map_location=torch.device('cpu'))
+    chpt = torch.load(pt_file,map_location=torch.device('cpu'), weights_only=False)
     nn_model = chpt['model']
     nlayers = len(nn_model) // pm.ntypes // 2
     #print('nlayers %d' % (nlayers))

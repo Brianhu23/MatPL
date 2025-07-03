@@ -34,7 +34,6 @@ def atoms2xyzstr(atoms):
 nep_path = "/data/home/wuxingxing/datas/debugs/ase/test_dp/dp_model.ckpt"
 train_path = "/data/home/wuxingxing/datas/debugs/ase/test_dp/train.xyz"
 output_file = "/data/home/wuxingxing/datas/debugs/ase/test_dp/train_out_dpckpt.xyz"
-atoms = io.read(train_path)
 # test
 
 traj = io.read(train_path, index=":")
@@ -42,6 +41,6 @@ calc = MatPL_calculator(nep_path)
 f = open(output_file, "w")
 for i in range(len(traj)):
     atoms = traj[i]
-    atoms.calc = calc
+    atoms.set_calculator(calc) #or  atoms.calc = calc
     f.write(atoms2xyzstr(atoms))
 f.close()

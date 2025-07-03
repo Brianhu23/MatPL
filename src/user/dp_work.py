@@ -51,7 +51,7 @@ author: wuxingxing
 '''
 def dp_test(input_json: json, cmd:str):
     model_load_path = get_required_parameter("model_load_file", input_json)
-    model_checkpoint = torch.load(model_load_path, map_location=torch.device("cpu"))
+    model_checkpoint = torch.load(model_load_path, map_location=torch.device("cpu"), weights_only=False)
     json_dict_train = model_checkpoint["json_file"]
     model_checkpoint["json_file"]["datasets_path"] = []
     json_dict_train["train_data"] = []

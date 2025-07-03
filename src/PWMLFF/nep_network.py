@@ -184,13 +184,13 @@ class nep_network:
         if model_path is not None and os.path.isfile(model_path):
             print("=> loading checkpoint '{}'".format(model_path))
             if not torch.cuda.is_available():
-                checkpoint = torch.load(model_path,map_location=torch.device('cpu'))
+                checkpoint = torch.load(model_path,map_location=torch.device('cpu'), weights_only=False)
             elif self.input_param.gpu is None:
-                checkpoint = torch.load(model_path)
+                checkpoint = torch.load(model_path, weights_only=False)
             elif torch.cuda.is_available():
                 # Map model to be loaded to specified single gpu.
                 loc = "cuda:{}".format(self.input_param.gpu)
-                checkpoint = torch.load(model_path, map_location=loc)
+                checkpoint = torch.load(model_path, map_location=loc, weights_only=False)
             # start afresh
             if self.input_param.optimizer_param.reset_epoch:
                 if checkpoint["epoch"] != 1:

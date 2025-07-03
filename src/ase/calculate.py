@@ -16,7 +16,7 @@ class MatPL_calculator(Calculator):
 
     >>> calc = MatPL(model_file='ckptfile or nep txt file')
     >>> atoms = bulk('C', 'diamond', cubic=True)
-    >>> atoms.set_calculator(calc)
+    >>> atoms.calc = calc
     >>> energy = atoms.get_potential_energy()
     >>> forces = atoms.get_forces()
     >>> stress = atoms.get_stress()

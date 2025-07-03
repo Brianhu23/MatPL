@@ -8,7 +8,7 @@ from src.PWMLFF.nn_param_extract import extract_force_field as nn_extract_force_
 
 def extract_force_field(ckpt_file, cmd_type):
     #json_file
-    model_checkpoint = torch.load(ckpt_file,map_location=torch.device("cpu"))
+    model_checkpoint = torch.load(ckpt_file,map_location=torch.device("cpu"), weights_only=False)
     json_dict = model_checkpoint["json_file"]
     dp_param = InputParam(json_dict, "train".upper())
     # set forcefiled save path
@@ -23,7 +23,7 @@ def extract_force_field(ckpt_file, cmd_type):
 
 def script_model(ckpt_file, script_save_name:None):
     # Step 1.
-    model_checkpoint = torch.load(ckpt_file,map_location=torch.device("cpu"))
+    model_checkpoint = torch.load(ckpt_file,map_location=torch.device("cpu"), weights_only=False)
     model_type = model_checkpoint["json_file"]["model_type"].upper()
     if model_type == "DP":
         script_dp_model(model_checkpoint, ckpt_file, script_save_name)

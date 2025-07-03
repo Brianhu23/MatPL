@@ -28,7 +28,7 @@ import os
 
 def read_wij(model_path, ntype):
     #first argument as input file path
-    model_checkpoint = torch.load(model_path, map_location=torch.device("cpu"))
+    model_checkpoint = torch.load(model_path, map_location=torch.device("cpu"), weights_only=False)
     nn_model = model_checkpoint['state_dict']
     nlayers = len(nn_model) // ntype // 2
     #print('nlayers %d' % (nlayers))
@@ -71,7 +71,7 @@ def read_wij(model_path, ntype):
 
 
 def read_scaler(src_name, ntype):
-    model_checkpoint = torch.load(src_name, map_location=torch.device("cpu"))
+    model_checkpoint = torch.load(src_name, map_location=torch.device("cpu"), weights_only=False)
     scaler = model_checkpoint['scaler']
 
     fout = open('fread_dfeat/data_scaler.txt', 'w')

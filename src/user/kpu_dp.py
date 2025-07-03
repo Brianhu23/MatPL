@@ -17,7 +17,7 @@ class KPU_CALCULATE(object):
         self.KFOptWrapper = KFOptimizerWrapper(self.model, self.optimizer, 24, 6)
 
     def load_model(self, ckpt_file: str):
-        model_checkpoint = torch.load(ckpt_file, map_location = torch.device("cpu"))
+        model_checkpoint = torch.load(ckpt_file, map_location = torch.device("cpu"), weights_only=False)
         stat = [model_checkpoint["davg"], model_checkpoint["dstd"], model_checkpoint["energy_shift"]]
         model_checkpoint["json_file"]["model_load_file"] = ckpt_file
         model_checkpoint["json_file"]["datasets_path"] = []

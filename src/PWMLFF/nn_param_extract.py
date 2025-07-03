@@ -41,7 +41,7 @@ def extract_force_field(dp_params:InputParam):
     os.chdir(cwd)
 
 def load_scaler_from_checkpoint(model_path):
-    model_checkpoint = torch.load(model_path,map_location=torch.device("cpu"))
+    model_checkpoint = torch.load(model_path,map_location=torch.device("cpu"), weights_only=False)
     scaler = model_checkpoint['scaler']
     return scaler
 
@@ -93,7 +93,7 @@ return {*}
 author: wuxingxing
 '''
 def extract_dreat_input(ckpt_file, forcefield_dir):
-    model_ckpt = torch.load(ckpt_file,map_location=torch.device("cpu"))
+    model_ckpt = torch.load(ckpt_file,map_location=torch.device("cpu"), weights_only=False)
 
     dfread_dfeat = model_ckpt["dfread_dfeat_input"]["dfread_dfeat"]
     fread_dfeat_dir = os.path.join(forcefield_dir, "fread_dfeat")
