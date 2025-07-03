@@ -1,0 +1,6 @@
+{
+"model_load_file":"nep_to_lmps.txt",
+"model_type":"NEP",
+"format":"extxyz",
+"test_data":"../train.xyz"
+}

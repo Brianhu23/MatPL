@@ -1,0 +1,6 @@
+{
+"model_load_file":"dp_model.ckpt",
+"model_type":"DP",
+"format":"extxyz",
+"test_data":"train.xyz"
+}
