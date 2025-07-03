@@ -97,7 +97,7 @@ parent_path=$(dirname "$current_path")
 # write enviromenet to env.sh
 cat <<EOF > ../env.sh
 # Load for MatPL
-export PYTHONPATH=$current_path:\$PYTHONPATH
+export PYTHONPATH=$parent_path:\$PYTHONPATH
 
 export PATH=$current_path/bin:\$PATH
 EOF
@@ -112,7 +112,7 @@ echo "  source $parent_path/env.sh"
 echo ""
 echo "Or by executing the following commands:"
 echo ""
-echo "  export PYTHONPATH=$current_path:\$PYTHONPATH"
+echo "  export PYTHONPATH=$parent_path:\$PYTHONPATH"
 echo "  export PATH=$current_path/bin:\$PATH"
 echo ""
 echo "=================================="
