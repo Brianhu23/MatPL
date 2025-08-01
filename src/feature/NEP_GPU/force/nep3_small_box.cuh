@@ -656,6 +656,10 @@ static __global__ void find_force_ZBL(
 
       float r12[3] = {g_x12_angular[index], g_y12_angular[index], g_z12_angular[index]};
       float d12 = sqrt(r12[0] * r12[0] + r12[1] * r12[1] + r12[2] * r12[2]);
+      double max_rc_outer = 2.5;
+      if (d12sq >= max_rc_outer) {
+        continue;
+      }
       float d12inv = 1.0f / d12;
       float f, fp;
       float zj = zbl.atomic_numbers[type2];

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.15)
 project(NEP_GPU LANGUAGES CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 14)
