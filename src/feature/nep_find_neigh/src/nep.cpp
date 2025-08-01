@@ -36,7 +36,7 @@ heat transport, Phys. Rev. B. 104, 104309 (2021).
 ------------------------------------------------------------------------------*/
 
 #include "nep.h"
-#include "dftd3para.h"
+// #include "dftd3para.h"
 #include <algorithm>
 #include <cmath>
 #include <fstream>
@@ -54,6 +54,7 @@ heat transport, Phys. Rev. B. 104, 104309 (2021).
 
 namespace
 {
+const double Bohr = 0.5291772575069165;
 const int MAX_NEURON = 200; // maximum number of neurons in the hidden layer
 const int MN = 1000;       // maximum number of neighbors for one atom
 const int NUM_OF_ABC = 24;  // 3 + 5 + 7 + 9 for L_max = 4
@@ -979,8 +980,10 @@ void find_descriptor_small_box(
     for (int i1 = 0; i1 < g_NN_radial[n1]; ++i1) {
       int index = i1 * N + n1;
       int n2 = g_NL_radial[index];
+      int t2 = g_type[n2];
       double r12[3] = {g_x12_radial[index], g_y12_radial[index], g_z12_radial[index]};
       double d12 = sqrt(r12[0] * r12[0] + r12[1] * r12[1] + r12[2] * r12[2]);
+      // printf("feat n1 %d t1 %d n2 %d t2 %d d12 %f = %f %f %f\n",n1, t1, n2, t2, d12, r12[0], r12[1], r12[2]);
 #ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
       int index_left, index_right;
       double weight_left, weight_right;
@@ -997,7 +1000,6 @@ void find_descriptor_small_box(
 #else
       double fc12;
       find_fc(paramb.rc_radial, paramb.rcinv_radial, d12, fc12);
-      int t2 = g_type[n2];
       double fn12[MAX_NUM_N];
       // if (n1 ==0){
       //   printf("n1 %d t1 %d n2 %d t2 %d r12 %f fc %f\n", n1, t1, n2, t2, d12, fc12);
@@ -1091,7 +1093,7 @@ void find_descriptor_small_box(
     if (calculating_potential || calculating_latent_space || calculating_polarizability) {
       for (int d = 0; d < annmb.dim; ++d) {
         // if (n1==0) {
-        // printf("n1 %d all[%d]=%f q[%d]=%f scaler[%d]=%f\n", n1, d, q[d] * paramb.q_scaler[d], d, q[d], d, paramb.q_scaler[d]);
+        // printf("n1 %d q[%d]=%f scaler[%d]=%f\n", n1, d, q[d], d, paramb.q_scaler[d]);
         // }
         q[d] = q[d] * paramb.q_scaler[d];
       }
@@ -2070,6 +2072,7 @@ void get_inverse(double* cpu_h)
 void get_expanded_box(const double rc, const double* box, int* num_cells, double* ebox)
 {
   double volume = get_volume(box);
+  // printf("=========vlume %f =======\n", volume);
   double thickness_x = volume / get_area(0, box);
   double thickness_y = volume / get_area(1, box);
   double thickness_z = volume / get_area(2, box);
@@ -2088,6 +2091,10 @@ void get_expanded_box(const double rc, const double* box, int* num_cells, double
   ebox[8] = box[8] * num_cells[2];
 
   get_inverse(ebox);
+
+  // printf("===ebox[0-8]  %f %f %f %f %f %f %f %f %f  ===\n", ebox[0], ebox[1], ebox[2], ebox[3], ebox[4], ebox[5], ebox[6], ebox[7], ebox[8]);
+  // printf("===ebox[9-17] %f %f %f %f %f %f %f %f %f  ===\n", ebox[9], ebox[10], ebox[11], ebox[12], ebox[13], ebox[14], ebox[15], ebox[16], ebox[17]);
+
 }
 
 void applyMicOne(double& x12)
@@ -2848,6 +2855,10 @@ void NEP3_CPU::compute(
     total_virial[n] = 0.0;
   }
 
+  // for (int i = 0; i < N; i++) {
+  //   printf("p[%d]= %f %f %f \n",i, position[i], position[N+i], position[2*N+i]);
+  // }
+
   find_neighbor_compute(
     paramb.rc_radial, paramb.rc_angular, N, MN, box, position, num_cells, ebox, 
     NN_radial, NL_radial, NN_angular, NL_angular, 
@@ -2879,6 +2890,10 @@ void NEP3_CPU::compute(
   // for (int ii = 0; ii < N; ii++) {
   // printf("radial force f[%d]=%f %f %f\n", ii, force[ii], force[ii + N], force[ii + N * 2]);
   // }
+  // for (int ii = 0; ii < N; ii++) {
+  //   printf("radial force[%d]=%f %f %f\n", ii, force[ii], force[ii+ N], force[ii+ N*2]);
+  // }
+
   find_force_angular_small_box(
     false, paramb, annmb, N, NN_angular.data(), NL_angular.data(), type.data(),
     r12.data() + size_x12 * 3, r12.data() + size_x12 * 4, r12.data() + size_x12 * 5, Fp.data(),
@@ -2964,7 +2979,7 @@ bool NEP3_CPU::set_dftd3_para_one(
     dftd3.s6 = s6;
     dftd3.a1 = a1;
     dftd3.s8 = s8;
-    dftd3.a2 = a2 * dftd3para::Bohr;
+    dftd3.a2 = a2 * Bohr;
     return true;
   }
   return false;

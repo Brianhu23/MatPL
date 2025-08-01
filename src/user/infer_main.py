@@ -29,7 +29,11 @@ def infer_main(sys_cmd:list[str]):
     else:
         atom_types = None
 
-    device = torch.device("cpu")
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+    print("device: {}".format(device.type))
     infer = Inference(ckpt_file, device, use_nep_txt)
     if os.path.isdir(structures_file):
         traj_list = glob.glob(os.path.join(structures_file, "*"))
@@ -59,8 +63,12 @@ def model_devi(ckpt_file_list, structure_dir, format, save_path, atom_names:list
                 raise Exception("The input '-t' or '--atom_type': '{}' is not valid, please check the input".format(" ".join(atom_names)))
     else:
         atom_types = None
-    
-    device = torch.device("cpu") # "gpu has an error when calculate force /2025/5/30"
+
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+    print("device: {}".format(device.type))
     if os.path.isdir(structure_dir):
         traj_list = glob.glob(os.path.join(structure_dir, "*"))
         try:

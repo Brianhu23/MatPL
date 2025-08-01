@@ -39,12 +39,18 @@ class Inference(object):
                     line = rf.readline()
                     atom_names = line.split()[2:]
                     self.model_atom_type = get_atomic_number_from_name(atom_names)
-            from src.feature.nep_find_neigh.findneigh import FindNeigh
-            self.calc = FindNeigh()
-            self.calc.init_model(self.ckpt_file)
+            
+            if self.device.type == "cpu":
+                from src.feature.nep_find_neigh.findneigh import FindNeigh
+                self.calc = FindNeigh()
+                self.calc.init_model(self.ckpt_file)
+            else:
+                from src.feature.NEP_GPU.build.nep_gpu import NEP3
+                self.calc = NEP3()
+                self.calc.init_from_file(self.ckpt_file, 1, 0)
+            
             if "tmp_matpl_nep" in self.ckpt_file:
                 os.remove(self.ckpt_file)
-
 
     '''
     description: 

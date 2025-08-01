@@ -73,7 +73,7 @@ static void get_expanded_box(const double rc, const Box& box, NEP3::ExpandedBox&
 {
   double volume = box.get_volume();
 
-  // printf("======gpu volume %f ======\n", volume);
+  printf("======gpu volume %f ======\n", volume);
   double thickness_x = volume / box.get_area(0);
   double thickness_y = volume / box.get_area(1);
   double thickness_z = volume / box.get_area(2);
@@ -109,8 +109,8 @@ static void get_expanded_box(const double rc, const Box& box, NEP3::ExpandedBox&
   for (int n = 9; n < 18; n++) {
     ebox.h[n] /= det;
   }
-  // printf("===ebox[0-8]  %f %f %f %f %f %f %f %f %f  ===\n", ebox.h[0], ebox.h[1], ebox.h[2], ebox.h[3], ebox.h[4], ebox.h[5], ebox.h[6], ebox.h[7], ebox.h[8]);
-  // printf("===ebox[9-17] %f %f %f %f %f %f %f %f %f  ===\n", ebox.h[9], ebox.h[10], ebox.h[11], ebox.h[12], ebox.h[13], ebox.h[14], ebox.h[15], ebox.h[16], ebox.h[17]);
+  printf("===ebox[0-8]  %f %f %f %f %f %f %f %f %f  ===\n", ebox.h[0], ebox.h[1], ebox.h[2], ebox.h[3], ebox.h[4], ebox.h[5], ebox.h[6], ebox.h[7], ebox.h[8]);
+  printf("===ebox[9-17] %f %f %f %f %f %f %f %f %f  ===\n", ebox.h[9], ebox.h[10], ebox.h[11], ebox.h[12], ebox.h[13], ebox.h[14], ebox.h[15], ebox.h[16], ebox.h[17]);
 }
 
 NEP3::NEP3() {}
@@ -563,9 +563,9 @@ void NEP3::inference(
 
   std::vector<double> tmp_posiion(N*3);
   lmp_data.position.copy_to_host(tmp_posiion.data());
-  // for (int i = 0; i < N; i++) {
-  //   printf("p[%d]= %f %f %f \n",i, tmp_posiion[i], tmp_posiion[N+i], tmp_posiion[2*N+i]);
-  // }
+  for (int i = 0; i < N; i++) {
+    printf("p[%d]= %f %f %f \n",i, tmp_posiion[i], tmp_posiion[N+i], tmp_posiion[2*N+i]);
+  }
   box.cpu_h[0] = box_cpu[0]; 
   box.cpu_h[1] = box_cpu[1]; 
   box.cpu_h[2] = box_cpu[2]; 
@@ -658,11 +658,11 @@ void NEP3::inference(
   // }
   
   // // bool is_dipole = paramb.model_type == 1;
-  find_force_radial_small_box<<<grid_size, BLOCK_SIZE>>>(
+  find_force_radial_large_box<<<grid_size, BLOCK_SIZE>>>(
     paramb,
     annmb,
     N,
-    N1, 
+    N1,
     nep_data.NN_radial.data(),
     nep_data.NL_radial.data(),
     lmp_data.type.data(),
@@ -670,24 +670,25 @@ void NEP3::inference(
     nep_data.r12.data() + size_x12,
     nep_data.r12.data() + size_x12 * 2,
     nep_data.Fp.data(),
+    // false, //is_dipole,
 #ifdef USE_TABLE
     nep_data.gnp_radial.data(),
 #endif
     nep_data.force_per_atom.data(),
     nep_data.force_per_atom.data() + N,
     nep_data.force_per_atom.data() + N * 2,
-    nep_data.virial_per_atom.data(),
-    nep_data.total_virial.data()
-  );
+    nep_data.virial_per_atom.data()
+    // nep_data.total_virial.data()
+    );
   CUDA_CHECK_KERNEL
   // cudaDeviceSynchronize();
   // nep_data.potential_per_atom.copy_to_host(cpu_potential_per_atom);
-  // std::vector<double> cpu_force_per_atom(N*3);
-  // nep_data.force_per_atom.copy_to_host(cpu_force_per_atom.data());
-  // for (int ii = 0; ii < N; ii++) {
-  //   printf("radial force[%d]=%f %f %f\n", ii, 
-  //     cpu_force_per_atom[ii], cpu_force_per_atom[ii+ N], cpu_force_per_atom[ii+ N*2]);
-  // }
+  std::vector<double> cpu_force_per_atom(N*3);
+  nep_data.force_per_atom.copy_to_host(cpu_force_per_atom.data());
+  for (int ii = 0; ii < N; ii++) {
+    printf("radial force[%d]=%f %f %f\n", ii, 
+      cpu_force_per_atom[ii], cpu_force_per_atom[ii+ N], cpu_force_per_atom[ii+ N*2]);
+  }
   // std::vector<double> tmp_viral(N * 9);
   // nep_data.virial_per_atom.copy_to_host(tmp_viral.data());
   // for (int ii = 0; ii < N; ii++) {
@@ -695,7 +696,7 @@ void NEP3::inference(
   //     ii, tmp_viral[ii], tmp_viral[ii + N], tmp_viral[ii + N * 2]);
   // }
 
-  find_force_angular_small_box<<<grid_size, BLOCK_SIZE>>>(
+  find_force_angular_small_box(
     paramb,
     annmb,
     N,
@@ -789,7 +790,6 @@ void NEP3::inference(
       nep_data.force_per_atom.data() + N,
       nep_data.force_per_atom.data() + N * 2, 
       nep_data.virial_per_atom.data(),
-      nep_data.total_virial.data(), 
       nep_data.potential_per_atom.data());
     CUDA_CHECK_KERNEL
   }
@@ -802,14 +802,14 @@ void NEP3::inference(
   //   ii, cpu_force_per_atom[ii], cpu_force_per_atom[ii+N], cpu_force_per_atom[ii+N*2]);
   // }
 
-  // grid_size = (N - 1) / BLOCK_SIZE + 1;
-  // calculate_total_virial<<<grid_size, BLOCK_SIZE>>>(
-  //                           nep_data.virial_per_atom.data(), 
-  //                           nep_data.total_virial.data(), 
-  //                           N);
+  grid_size = (N - 1) / BLOCK_SIZE + 1;
+  calculate_total_virial<<<grid_size, BLOCK_SIZE>>>(
+                            nep_data.virial_per_atom.data(), 
+                            nep_data.total_virial.data(), 
+                            N);
 
-  // CUDA_CHECK_KERNEL
-  // cudaDeviceSynchronize();
+  CUDA_CHECK_KERNEL
+  cudaDeviceSynchronize();
 
   nep_data.total_virial.copy_to_host(nep_data.cpu_total_virial.data());
   double temp[9] = {nep_data.cpu_total_virial[0], nep_data.cpu_total_virial[3], nep_data.cpu_total_virial[4],
@@ -822,11 +822,11 @@ void NEP3::inference(
   nep_data.potential_per_atom.copy_to_host(nep_data.cpu_potential_per_atom.data());
   nep_data.force_per_atom.copy_to_host(nep_data.cpu_force_per_atom.data());
 
-  // for (int ii = 0; ii < N; ii++) {
-  //   if (1) {
-  //     printf("end ei[%d]=%f\n", ii, nep_data.cpu_potential_per_atom[ii]);
-  //   }
-  // }
+  for (int ii = 0; ii < N; ii++) {
+    if (1) {
+      printf("end ei[%d]=%f\n", ii, nep_data.cpu_potential_per_atom[ii]);
+    }
+  }
 
   // for (int ii = 0; ii < N; ii++) {
   //   if (1) {
