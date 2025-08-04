@@ -18,6 +18,7 @@ cp findneigh.* ../findneigh.so
 
 cd ../../
 # make nep_gpu interface
+mkdir NEP_GPU/build
 cd NEP_GPU/build
 cmake -Dpybind11_DIR=$(python -m pybind11 --cmakedir) .. && make
 cp nep3_module*.so nep_gpu.so
