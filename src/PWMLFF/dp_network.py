@@ -44,6 +44,7 @@ from src.pre_data.dpuni_data_loader import UniDataset, type_map, variable_length
 from src.PWMLFF.dp_mods.dp_trainer import train_KF, train, valid, save_checkpoint, predict
 from src.PWMLFF.dp_param_extract import load_davg_dstd_from_checkpoint, load_davg_dstd_from_feature_path
 from src.user.input_param import InputParam
+from utils.learning_rate import is_epoch_before_restart
 from utils.file_operation import write_arrays_to_file, copy_movements_to_work_dir, smlink_file
 #from data_loader_2type_dp import MovementDataset, get_torch_data
 from src.aux.inference_plot import inference_plot
@@ -614,6 +615,26 @@ class dp_network:
                     self.dp_params.file_paths.model_name,
                     self.dp_params.file_paths.model_store_dir,
                 )
+                # if use CosineAnnealingWarmRestarts, save the model before restarting learning rate
+                if self.dp_params.optimizer_param.t_0 is not None and \
+                    is_epoch_before_restart(self.dp_params.optimizer_param.t_0, self.dp_params.optimizer_param.t_mult, epoch):
+                    save_path = os.path.join(self.dp_params.file_paths.model_store_dir, "saved_models")
+                    if os.path.exists(save_path) is not True:
+                        os.makedirs(save_path)
+                    save_checkpoint({
+                                    "json_file":self.dp_params.to_dict(),
+                                    "epoch": epoch,
+                                    "state_dict": model.state_dict(),
+                                    "davg":davg,
+                                    "dstd":dstd,
+                                    "energy_shift":energy_shift,
+                                    "atom_type_order": np.array(self.dp_params.atom_type),    #atom type order of davg/dstd/energy_shift
+                                    "sij_max":Sij_max
+                                    },
+                                    f'epoch_{epoch}_{self.dp_params.file_paths.model_name}',
+                                    save_path,
+                                    )
+
 
     def load_model_with_ckpt(self, davg, dstd, energy_shift):
         model, optimizer, _ = self.load_model_optimizer(davg, dstd, energy_shift)

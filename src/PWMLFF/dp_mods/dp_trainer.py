@@ -335,7 +335,7 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, start_lr,
                     "atom_type_order": np.array(args.atom_type),    #atom type order of davg/dstd/energy_shift
                     "sij_max":Sij_max
                     },
-                    os.path.join(args.file_paths.model_store_dir, "save_step"),
+                    os.path.join(args.file_paths.model_store_dir, "saved_models"),
                     epoch,
                     i,
                     args.max_save_num

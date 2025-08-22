@@ -51,27 +51,7 @@ class NepTestData():
     def __init__(self, input_param:InputParam):
         self.image_list = []
         self.input_param = input_param
-        # data_paths = []
-        # for data_path in self.input_param.file_paths.datasets_path:
-        #     if os.path.exists(os.path.join(os.path.join(data_path, "train", "position.npy"))):
-        #         data_paths.append(os.path.join(os.path.join(data_path, "train"))) #train dir
-        #     if os.path.exists(os.path.join(os.path.join(data_path, "valid", "position.npy"))):
-        #         data_paths.append(os.path.join(os.path.join(data_path, "valid"))) #valid dir
-        #     if os.path.exists(os.path.join(data_path, "position.npy")) > 0: # add train or valid data
-        #         data_paths.append(data_path)
 
-        # if len(data_paths) > 0:
-        #     for config in data_paths:
-        #         image_read = Config(data_path=config, format="pwmlff/npy").images
-        #         if isinstance(image_read, list):
-        #             self.image_list.extend(image_read)
-        #         else:
-        #             self.image_list.append(image_read)
-        # for image in self.image_list:
-        #     # if image.cartesian is True:
-        #     #     image._set_fractional()
-        #     if image.cartesian is False:
-        #         image._set_cartesian()
         if len(self.input_param.file_paths.test_data_path) > 0:
             for config in self.input_param.file_paths.test_data_path:
                 image_read = Config(data_path=config, format=self.input_param.file_paths.format).images
@@ -189,39 +169,6 @@ class UniDataset(Dataset):
         x, residuals, rank, s = np.linalg.lstsq(np.array(_num_matrix).T, energy_dict['E'], rcond=None)
         energy_shift = x.tolist()
         return energy_shift # array([-7.85248589, -8.80939613, -5.12775169, -3.13588943])
-
-    # def set_energy_shift(self):
-    #     energy_dict = {}
-    #     atom_type_searched = set()
-    #     repeat_num = 0
-    #     for atom in self.atom_types:
-    #         energy_dict[atom] = []
-    #     energy_dict['E'] = []
-    #     shuffled_list = random.sample(self.image_list, len(self.image_list))
-    #     for image in shuffled_list:
-    #         atom_types = image.atom_types_image
-    #         cout_type, cout_num = np.unique(atom_types, return_counts=True)
-    #         atom_types_image_dict = dict(zip(cout_type, cout_num))
-    #         for element in self.atom_types:
-    #             if element in atom_types_image_dict.keys():
-    #                 energy_dict[element].append(atom_types_image_dict[element])
-    #             else:
-    #                 energy_dict[element].append(0)
-    #         energy_dict['E'].append(image.Ep)
-    #         for element in atom_types_image_dict.keys():
-    #             atom_type_searched.add(element)
-    #         if len(atom_type_searched) == len(self.atom_types):
-    #             repeat_num += 1
-    #             atom_type_searched.clear()
-    #         if repeat_num > 5:
-    #             break
-    #     _num_matrix = []
-    #     for key in energy_dict.keys():
-    #         if key != 'E':
-    #             _num_matrix.append(energy_dict[key])
-    #     x, residuals, rank, s = np.linalg.lstsq(np.array(_num_matrix).T, energy_dict['E'], rcond=None)
-    #     energy_shift = x.tolist()
-    #     return energy_shift
 
     def get_energy_shift(self):
         return self.energy_shift

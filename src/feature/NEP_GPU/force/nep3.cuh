@@ -65,6 +65,12 @@ struct NEP3_Data {
 
   std::vector<int> cpu_NN_radial;
   std::vector<int> cpu_NN_angular;
+
+  std::vector<double> cpu_potential_per_atom;
+  std::vector<double> cpu_force_per_atom;
+  std::vector<double> cpu_virial_per_atom;
+  std::vector<double> cpu_total_virial;
+
 #ifdef USE_TABLE
   GPU_Vector<float> gn_radial;   // tabulated gn_radial functions
   GPU_Vector<float> gnp_radial;  // tabulated gnp_radial functions
@@ -102,6 +108,7 @@ public:
     int dim = 0;                 // dimension of the descriptor
     int num_neurons1 = 0;        // number of neurons in the 1st hidden layer
     int num_para = 0;            // number of parameters
+    int num_para_ann = 0;
     int num_c2 = 0;
     int num_c3 = 0;
     const float* w0[PARAM_SIZE]; // weight from the input layer to the hidden layer
@@ -128,7 +135,7 @@ public:
 
   struct ExpandedBox {
     int num_cells[3];
-    float h[18];
+    double h[18];
   };
 
   NEP3();
@@ -157,15 +164,11 @@ public:
 #ifdef USE_TABLE
   void construct_table(float* parameters);
 #endif
-  void compute_pwmlff(
+  void inference(
     int N, //atom nums
-    int NM,// maxneighbors
     int* itype_cpu, //atoms' type,the len is [n_all]
     double* box_cpu, 
-    double* position_cpu, // postion of atoms x, [n_all * 3]
-    double* cpu_potential_per_atom, // the output of ei
-    double* cpu_force_per_atom,     // the output of force
-    double* cpu_total_virial     // the output of virial
+    double* position_cpu // postion of atoms x, [n_all * 3]
     );
   double rc; // maximum cutoff distance
   bool is_gpumd_nep = false;
