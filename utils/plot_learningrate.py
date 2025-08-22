@@ -4,9 +4,9 @@ import pandas as pd
 
 # log_path = "/data/home/wuxingxing/datas/debugs/spf/Si-SiO2-HfO2-TiN/norml2_warm/slurm-1624402.out"
 # picture_save_path="/data/home/wuxingxing/datas/debugs/spf/Si-SiO2-HfO2-TiN/norml2_warm/lr_new1.png"
-log_path = "/data/home/wuxingxing/datas/pwmat_mlff_workdir/hfo2/debug/dp/slurm-2065873.out"
-picture_save_path= "/data/home/wuxingxing/datas/pwmat_mlff_workdir/hfo2/debug/dp/dp.png"
-max_epoch = 10
+log_path = "/data/home/wuxingxing/datas/pwmat_mlff_workdir/hfo2/mgnep/stdallb256/slurm-2554439.out"
+picture_save_path= "/data/home/wuxingxing/datas/pwmat_mlff_workdir/hfo2/mgnep/stdallb256/lr.png"
+max_epoch = 40
 
 with open(log_path, 'r') as rf:
     data = rf.readlines()
@@ -43,7 +43,7 @@ df = pd.DataFrame({
     'lr': learning_rates[:len(epoch_iters)]
 })
 
-x_value = list(range(0, len(x_loc)))
+x_value = list(range(1, len(x_loc)+1))
 
 # 绘制学习率变化曲线（按 epoch 均值）
 plt.figure(figsize=(10, 6))

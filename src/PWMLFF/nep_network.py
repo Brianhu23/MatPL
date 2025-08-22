@@ -41,7 +41,7 @@ from src.PWMLFF.dp_param_extract import load_atomtype_energyshift_from_checkpoin
 from src.user.input_param import InputParam
 from utils.file_operation import write_arrays_to_file, write_force_ei
 from utils.nep_to_gpumd import extract_model
-
+from utils.learning_rate import is_epoch_before_restart
 from src.aux.inference_plot import inference_plot
 import concurrent.futures
 import multiprocessing
@@ -513,6 +513,28 @@ class nep_network:
                     self.input_param.file_paths.model_name,
                     self.input_param.file_paths.model_store_dir,
                 )
+                # if use CosineAnnealingWarmRestarts, save the model before restarting learning rate
+                if self.input_param.optimizer_param.t_0 is not None and \
+                    is_epoch_before_restart(self.input_param.optimizer_param.t_0, self.input_param.optimizer_param.t_mult, epoch):
+                    save_path = os.path.join(self.input_param.file_paths.model_store_dir, "saved_models")
+                    if os.path.exists(save_path) is not True:
+                        os.makedirs(save_path)
+                    save_checkpoint({
+                                    "json_file":self.input_param.to_dict(),
+                                    "epoch": epoch,
+                                    "state_dict": model.state_dict(),
+                                    "energy_shift":energy_shift,
+                                    "max_neighbor": [model.max_NN_radial, model.max_NN_angular],
+                                    "q_scaler": model.get_q_scaler(),
+                                    "atom_type_order": self.input_param.atom_type    #atom type order of davg/dstd/energy_shift
+                                    # "optimizer":optimizer.state_dict()
+                                    # "sij_max":Sij_max
+                                    },
+                                    f'epoch_{epoch}_{self.input_param.file_paths.model_name}',
+                                    save_path,
+                        )
+                    self.convert_to_gpumd_saved_models(f"epoch_{epoch}_", save_path)
+
             self.convert_to_gpumd()
             
     '''
@@ -533,6 +555,15 @@ class nep_network:
                 wf.writelines(nep_content)
         # print("Successfully convert to nep.in and nep.txt file.") 
 
+    def convert_to_gpumd_saved_models(self, prefix="", save_path=None):
+        ckpt_path = os.path.join(self.input_param.file_paths.model_store_dir, self.input_param.file_paths.model_name)
+        save_nep_txt_path = os.path.join(save_path, f"{prefix}{self.input_param.file_paths.nep_model_file}")            
+        # extract parameters
+        nep_content, model_atom_type, atom_names = extract_model(ckpt_path)
+        with open(save_nep_txt_path, 'w') as wf:
+                wf.writelines(nep_content)
+        # print("Successfully convert to nep.in and nep.txt file.") 
+        
     def evaluate(self,num_thread = 1):
         """
             evaluate a model against AIMD

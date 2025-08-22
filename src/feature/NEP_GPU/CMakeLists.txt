@@ -5,16 +5,17 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CUDA_STANDARD 14)
 
 # 设置 CUDA 架构支持
-set(CMAKE_CUDA_ARCHITECTURES 60 70 75 80 86 89)
+set(CMAKE_CUDA_ARCHITECTURES 60 70 75 80 86 89 90)
 
 # Kepler sm_30
 # Maxwell, GTX980 sm_52
 # Pascal, GTX1080, Titan X, Titan Xp sm_60
 # Volta, Titan V sm_70
 # Turing, RTX 2060, RTX 2070, RTX 2080, RTX 2080Ti, Titan RTX sm_75
-# Ampere, A100 sm_80
+# Ampere, A100 A800 sm_80
 # Ampere, RTX 3070, RTX 3080, RTX 3090 sm_86 
 # Ampere, RTX 4090 sm_89
+# Hopper H100 H200 sm_90
 
 # 引入 pybind11
 find_package(pybind11 REQUIRED)

@@ -18,13 +18,21 @@ set(CUDA_NVCC_FLAGS
 # 4. 显式指定多架构代码生成
 list(APPEND CUDA_NVCC_FLAGS
     "-gencode arch=compute_60,code=sm_60"  # P100
-	"-gencode arch=compute_61,code=sm_61"  # 1080ti
-	"-gencode arch=compute_70,code=sm_70"  # V100
-	"-gencode arch=compute_75,code=sm_75"  # 2080
+    "-gencode arch=compute_61,code=sm_61"  # 1080ti
+    "-gencode arch=compute_70,code=sm_70"  # V100
+    "-gencode arch=compute_75,code=sm_75"  # 2080
     "-gencode arch=compute_80,code=sm_80"  # A100/A800
     "-gencode arch=compute_86,code=sm_86"  # RTX 3090,3080ti
-	"-gencode arch=compute_89,code=sm_89"  # RTX 4090
+    "-gencode arch=compute_89,code=sm_89"  # RTX 4090
+    "-gencode arch=compute_90,code=sm_90"  # H100 H200
 )
+
+# 5. 添加 TYPES 定义，可以从外部传入
+if(NOT DEFINED NEP_TYPES)
+    set(NEP_TYPES 20)  # 默认值
+endif()
+message(STATUS "NEP TYPES: ${NEP_TYPES}")
+add_definitions(-DTYPESIN=${NEP_TYPES})
 
 # add_library
 add_library(CalcOps_cuda SHARED ${CMAKE_SOURCE_DIR}/src/CalcOps.cpp)
