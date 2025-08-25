@@ -1,16 +1,43 @@
 #!/bin/bash
 
-# Default make command (single core)
+# Default make command (single core) and NEP types
 MAKE_CMD="make"
+NEP_TYPES=20  # 默认值
 
-# Check for -jN parameter
-if [[ "$1" =~ ^-j[0-9]+$ ]]; then
-    MAKE_CMD="make $1"
-    shift  # Remove the -jN parameter from arguments
-fi
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -j*)
+            MAKE_CMD="make $1"
+            shift
+            ;;
+        -n*)
+            # 提取 -n 后面的数字
+            NEP_TYPES="${1#-n}"
+            # 如果没有数字，则检查下一个参数是否为数字
+            if [[ -z "$NEP_TYPES" ]]; then
+                if [[ "$2" =~ ^[0-9]+$ ]]; then
+                    NEP_TYPES="$2"
+                    shift
+                else
+                    echo "Error: -n requires a numeric argument"
+                    exit 1
+                fi
+            fi
+            shift
+            ;;
+        *)
+            # 忽略其他参数
+            shift
+            ;;
+    esac
+done
 
-mkdir bin
-mkdir lib
+echo "Using NEP_TYPES = $NEP_TYPES"
+echo "Using MAKE_CMD = $MAKE_CMD"
+
+mkdir -p bin
+mkdir -p lib
 $MAKE_CMD -C pre_data/gen_feature
 $MAKE_CMD -C pre_data/fit
 $MAKE_CMD -C pre_data/fortran_code  # spack load gcc@7.5.0
@@ -19,8 +46,8 @@ $MAKE_CMD -C md/fortran_code
 # make nep-cpu interface
 cd feature/nep_find_neigh
 rm -rf build/*
-rm findneigh.so
-mkdir build
+rm -f findneigh.so
+mkdir -p build
 cd build
 cmake -Dpybind11_DIR=$(python -m pybind11 --cmakedir) .. && $MAKE_CMD
 cp findneigh.* ../findneigh.so
@@ -71,7 +98,7 @@ rm build -r
 mkdir build
 cd build
 # for bigmodel the types should be 100
-cmake -DNEP_TYPES=20 ..
+cmake -DNEP_TYPES=$NEP_TYPES ..
 $MAKE_CMD
 cd ..
 cd ..

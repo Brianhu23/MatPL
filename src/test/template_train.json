@@ -50,7 +50,7 @@
             "number_node": 1,
             "gpu_per_node": 1,
             "cpu_per_node": 1,
-            "queue_name": "3080ti,3090",
+            "queue_name": "3080ti,3090,4090",
             "custom_flags": [
             ],
             "source_list": [
@@ -206,11 +206,11 @@
         
     ],
 
-    "work_dir": "./test_workdir_mcloudgpu",
+    "work_dir": "./test_workdir_dev",
     "work_list": [
         {
             "_work_type":"mcloud envs(gpu and cpu) for DP, NEP",
-            "envs":[0],
+            "envs":[5],
             "epochs":[1],
             "train_inputs":[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,13,14,15,16,17,18,19,20,21,22,23,24]
         }
