@@ -1,4 +1,31 @@
 #!/bin/bash
+# 默认使用单核编译
+JOB_COUNT=1
+NEP_TYPES=""  # ³õÊ¼»¯Îª¿Õ
+
+# ½âÎöÃüÁîÐÐ²ÎÊý
+while getopts "j:n:" opt; do
+  case $opt in
+    j)
+      JOB_COUNT=$OPTARG
+      echo "Using $JOB_COUNT CPU cores for compilation"
+      ;;
+    n)
+      NEP_TYPES=$OPTARG
+      echo "Using NEP_TYPES = $NEP_TYPES"
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      exit 1
+      ;;
+    :)
+      echo "Option -$OPTARG requires an argument." >&2
+      exit 1
+      ;;
+  esac
+done
+
+
 SKIP=`awk '/^__ARCHIVE_BELOW__/ { print NR + 1; exit 0; }' $0`
 tail -n+$SKIP $0 | base64 -d > MatPL_cpu-2025.3.tar.gz.base64
 BASE_DIR=$(pwd)
@@ -51,7 +78,20 @@ source $ENV_DIR/bin/activate
 
 # 编译 MatPL
 cd $MATPL/src
-sh build.sh
+if [ $JOB_COUNT -gt 1 ]; then
+    if [ -n "$NEP_TYPES" ]; then
+        sh build.sh -j$JOB_COUNT -n$NEP_TYPES
+    else
+        sh build.sh -j$JOB_COUNT
+    fi
+else
+    if [ -n "$NEP_TYPES" ]; then
+        sh build.sh -n$NEP_TYPES
+    else
+        sh build.sh
+    fi
+fi
+
 
 # 设置环境变量
 export PATH=$MATPL/src/bin:$PATH
@@ -76,14 +116,22 @@ make yes-MATPL
 make yes-SHOCK
 
 # 使用 5 个线程并行编译
-make mpi -j5 mode=shared
+if [ $JOB_COUNT -gt 1 ]; then
+    make mpi -j$JOB_COUNT mode=shared
+else
+    make mpi mode=shared
+fi
 
 echo "The compilation of the lammps-2025.3 has been completed."
 
 # 编译 lammps-fortran
 cd $LAMMPS_FORTRAN/src/MATPL/fortran_code
 make clean
-make
+if [ $JOB_COUNT -gt 1 ]; then
+    make -j$JOB_COUNT
+else
+    make
+fi
 
 echo "The compilation of the lammps-fortran MATPL library has been completed. Start compiling LAMMPS ..."
 
@@ -101,7 +149,11 @@ make yes-MC
 make yes-MATPL
 
 # 使用 5 个线程并行编译
-make mpi -j5 mode=shared
+if [ $JOB_COUNT -gt 1 ]; then
+    make mpi -j$JOB_COUNT mode=shared
+else
+    make mpi mode=shared
+fi
 
 echo "The compilation of the lammps-fortran has been completed."
 
