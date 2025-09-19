@@ -754,13 +754,12 @@ class nep_network:
 
         # res_pd.to_csv(os.path.join(inference_path, "inference_loss.csv"))
 
-        rmse_E, rmse_F, rmse_V = inference_plot(inference_path)
-
+        rmse_E, rmse_F, rmse_V, e_r2, f_r2, v_r2 = inference_plot(inference_path)
         inference_cout = ""
         inference_cout += "For {} images: \n".format(len(images))
-        inference_cout += "Average RMSE of Etot per atom: {} \n".format(rmse_E)
-        inference_cout += "Average RMSE of Force: {} \n".format(rmse_F)
-        inference_cout += "Average RMSE of Virial per atom: {} \n".format(rmse_V)
+        inference_cout += "Average RMSE of Etot per atom: {} R2: {}\n".format(rmse_E, e_r2)
+        inference_cout += "Average RMSE of Force: {} R2: {}\n".format(rmse_F, f_r2)
+        inference_cout += "Average RMSE of Virial per atom: {} R2: {}\n".format(rmse_V, v_r2)
         inference_cout += "\nMore details can be found under the file directory:\n{}\n".format(os.path.realpath(self.input_param.file_paths.test_dir))
         print(inference_cout)
         with open(os.path.join(inference_path, "inference_summary.txt"), 'w') as wf:
@@ -811,14 +810,13 @@ class nep_network:
         write_arrays_to_file(os.path.join(inference_path, "inference_virial.txt"), virial_predict_list, head_line="#\txx\txy\txz\tyy\tyz\tzz")
 
         # res_pd.to_csv(os.path.join(inference_path, "inference_loss.csv"))
-
-        rmse_E, rmse_F, rmse_V = inference_plot(inference_path)
+        rmse_E, rmse_F, rmse_V, e_r2, f_r2, v_r2 = inference_plot(inference_path)
 
         inference_cout = ""
         inference_cout += "For {} images: \n".format(res_pd.shape[0])
-        inference_cout += "Average RMSE of Etot per atom: {} \n".format(rmse_E)
-        inference_cout += "Average RMSE of Force: {} \n".format(rmse_F)
-        inference_cout += "Average RMSE of Virial per atom: {} \n".format(rmse_V)
+        inference_cout += "Average RMSE of Etot per atom: {} R2: {}\n".format(rmse_E, e_r2)
+        inference_cout += "Average RMSE of Force: {} R2: {}\n".format(rmse_F, f_r2)
+        inference_cout += "Average RMSE of Virial per atom: {} R2: {}\n".format(rmse_V, v_r2)
         inference_cout += "\nMore details can be found under the file directory:\n{}\n".format(os.path.realpath(self.input_param.file_paths.test_dir))
         print(inference_cout)
         with open(os.path.join(inference_path, "inference_summary.txt"), 'w') as wf:

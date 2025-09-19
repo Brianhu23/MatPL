@@ -5,6 +5,7 @@ import numpy as np
 import numpy.linalg as LA
 import matplotlib
 import matplotlib.pyplot as plt
+from sklearn.metrics import r2_score
 
 def read_dft_movement(file_dft=r'MD/MOVEMENT', atom_type=[22,8]):
     f = open(file_dft, 'r')
@@ -243,10 +244,11 @@ def plot_new(atom_type, plot_elem = False, save_data = False, plot_ei = False):
         inference_summary_str += 'E_atomic, e_rmse: %.3E\n' % e_atomic_rms
     
     e_tot_rms = LA.norm(dft_total_energy - nn_total_energy) / np.sqrt(len(dft_total_energy))
-    print('E_tot, e_rmse: %.3E' % e_tot_rms)
+    e_r2 = r2_score(dft_total_energy, nn_total_energy)
+    print('E_tot, e_rmse: %.3E, R2: %.3f' % (e_tot_rms, e_r2))
     print('E_tot/N_atom, e_rmse: %.3E' % (e_tot_rms/num_atoms))
 
-    inference_summary_str += 'E_tot, e_rmse: %.3E\n' % e_tot_rms
+    inference_summary_str += 'E_tot, e_rmse: %.3E R2: %.3f\n' % (e_tot_rms, e_r2)
     inference_summary_str += 'E_tot/N_atom, e_rmse: %.3E\n' % (e_tot_rms/num_atoms)
 
     # calculate force
@@ -258,8 +260,9 @@ def plot_new(atom_type, plot_elem = False, save_data = False, plot_ei = False):
     lim_f_max = fmax + (fmax-fmin)*0.1
 
     f_rms = LA.norm(f_dft_plot - f_nn_plot) / np.sqrt(3*num_atoms*num_iters)
-    print('f_rmse: %.3E' % f_rms)
-    inference_summary_str += 'f_rmse: %.3E\n' % f_rms
+    f_r2 = r2_score(f_dft_plot, f_nn_plot)
+    print('f_rmse: %.3E R2: %.3f' % (f_rms, f_r2))
+    inference_summary_str += 'f_rmse: %.3E R2:%.3E\n' % (f_rms, f_r2)
     # Set up matplotlib parameters for better-looking plots
     # plt.rcParams['figure.figsize'] = (19, 5) # Increase figure size 
     plt.rcParams['font.size'] = 12  # Increase font size 
@@ -297,7 +300,7 @@ def plot_new(atom_type, plot_elem = False, save_data = False, plot_ei = False):
     ax.set_ylabel('MLFF energy (eV)')
     ax.legend(fontsize='small', loc='upper left')
     ax.text(0.02, 0.82, horizontalalignment='left', verticalalignment='top', s='Etot/Natom, rmse: %.3E' % (e_tot_rms / num_atoms), transform=ax.transAxes)
-    ax.text(0.02, 0.75, horizontalalignment='left', verticalalignment='top', s='Etot, rmse: %.3E' % (e_tot_rms), transform=ax.transAxes)
+    ax.text(0.02, 0.75, horizontalalignment='left', verticalalignment='top', s='Etot, rmse: %.3E, R2: %3E' % (e_tot_rms, e_r2), transform=ax.transAxes)
 
     # Plot force
     ax = axs[2 if plot_ei and dft_is_atomic else 1]
@@ -309,7 +312,7 @@ def plot_new(atom_type, plot_elem = False, save_data = False, plot_ei = False):
     ax.set_ylabel('MLFF Force (eV/Å)')
     ax.set_xlabel('DFT Force (eV/Å)')
     ax.legend(fontsize='small', loc='upper left')
-    ax.text(0.02, 0.82, horizontalalignment='left', verticalalignment='top', s='Force, rmse: %.3E' % (f_rms), transform=ax.transAxes)
+    ax.text(0.02, 0.82, horizontalalignment='left', verticalalignment='top', s='Force, rmse: %.3E, R2: %3E' % (f_rms, f_r2), transform=ax.transAxes)
 
     # Save figure
     if not os.path.exists('plot_data'):
@@ -402,4 +405,5 @@ def plot_new(atom_type, plot_elem = False, save_data = False, plot_ei = False):
 
     with open(f"plot_data/inference_summary.txt", 'w') as wf:
         wf.writelines(inference_summary_str)
-        
+
+

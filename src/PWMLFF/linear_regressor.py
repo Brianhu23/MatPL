@@ -18,9 +18,10 @@ sys.path.append(codepath+'/../..')
 
 from src.user.input_param_tmp import InputParam
 # from src.pre_data.nn_mlff_hybrid import get_cluster_dirs, make_work_dir, mv_featrues, copy_file
-
+from utils.file_operation import write_arrays_to_file
+from src.aux.inference_plot import inference_plot
 from utils.file_operation import copy_movements_to_work_dir, reset_pm_params, combine_movement, copy_tree
-from src.aux.plot_evaluation import plot_new
+from src.aux.plot_evaluation import plot_new, read_dft_movement
 import fortran_fitting as ff 
 import default_para as pm 
 class linear_regressor:
@@ -138,9 +139,54 @@ class linear_regressor:
         if not os.path.exists("MOVEMENT"):
             raise Exception("MOVEMENT not found. It should be force field MD result")
 
-        plot_ei = True if pm.fortranFitWeightOfEnergy != 0 else False
-            
-        plot_new(atom_type = pm.atomType, plot_elem = plot_elem, save_data = save_data, plot_ei = plot_ei)
+        # plot_ei = True if pm.fortranFitWeightOfEnergy != 0 else False
+        # plot_new(atom_type = pm.atomType, plot_elem = plot_elem, save_data = save_data, plot_ei = plot_ei)
+        from pwdata import Config
+        dft_image = Config(format="pwmat/movement", data_path="MD/MOVEMENT")
+        nn_image  = Config(format="pwmat/movement", data_path="MOVEMENT")
+        num_atoms = []
+        dft_total_energy = []
+        dft_atomic_energy = []
+        dft_force = []
+        nn_total_energy = []
+        nn_atomic_energy = []
+        nn_force = []
+        for dft, nn in zip(dft_image.images, nn_image.images):
+            num_atoms.append(dft.force.shape[0])
+            dft_total_energy.append(dft.Ep)
+            nn_total_energy.append(nn.Ep)
+            dft_atomic_energy.append(dft.atomic_energy)
+            nn_atomic_energy.append(nn.atomic_energy)
+            dft_force.append(dft.force)
+            nn_force.append(nn.force)
+
+        # print infos
+        inference_path = os.path.join(os.getcwd(),"plot_data")
+        if os.path.exists(inference_path) is False:
+            os.makedirs(inference_path)
+        write_arrays_to_file(os.path.join(inference_path, "image_atom_nums.txt"), num_atoms)
+        write_arrays_to_file(os.path.join(inference_path, "dft_total_energy.txt"), dft_total_energy)
+        write_arrays_to_file(os.path.join(inference_path, "inference_total_energy.txt"), nn_total_energy)
+
+        write_arrays_to_file(os.path.join(inference_path, "dft_atomic_energy.txt"), dft_atomic_energy)
+        write_arrays_to_file(os.path.join(inference_path, "inference_atomic_energy.txt"), nn_atomic_energy)
+
+        write_arrays_to_file(os.path.join(inference_path, "dft_force.txt"), dft_force)
+        write_arrays_to_file(os.path.join(inference_path, "inference_force.txt"), nn_force)
+
+        rmse_E, rmse_F, rmse_V, e_r2, f_r2, v_r2 = inference_plot(inference_path)
+        inference_cout = ""
+        inference_cout += "For {} images: \n".format(len(num_atoms))
+        inference_cout += "Average RMSE of Etot per atom: {} R2: {}\n".format(rmse_E, e_r2)
+        inference_cout += "Average RMSE of Force: {} R2: {}\n".format(rmse_F, f_r2)
+        inference_cout += "Average RMSE of Virial per atom: {} R2: {}\n".format(rmse_V, v_r2)
+        tmp_log = "\nMore details can be found under the file directory:\n{}\n".format(os.path.join(self.dp_params.file_paths.json_dir, os.path.basename(self.dp_params.file_paths.test_dir)))
+        inference_cout += tmp_log
+        print(tmp_log)
+
+        with open(os.path.join(inference_path, "inference_summary.txt"), 'w') as wf:
+            wf.writelines(inference_cout)
+
 
     def extract_force_field(self, name= "myforcefield.ff"):
 

@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+from sklearn.metrics import r2_score
 
 def inference_plot(data_dir:str):
     size = 20
@@ -40,10 +41,13 @@ def inference_plot(data_dir:str):
         dft_V = []
     plt.plot(dft_E.flatten(), MLFF_E.flatten(),"o",markersize=3,c="C0")
     plt.plot([E_min,E_max],[E_min,E_max],"--",lw=1.2,c="C1")
-    plt.axis([E_min*1.02,E_max*0.98,E_min*1.02,E_max*0.98])
+    # plt.axis([E_min*1.02,E_max*0.98,E_min*1.02,E_max*0.98])
+    e_r2 = r2_score(dft_E.flatten(), MLFF_E.flatten())
     s = "RMSE of Energy is %.1f meV/atom" % (rmse_E * 1e3)
+    sr2=r"R$^2$ = %.3f" % e_r2
     ax = plt.gca()
-    plt.text(.15,.05,s,fontsize=size-2,transform=ax.transAxes)
+    plt.text(.4,.125,sr2,fontsize=size-2,transform=ax.transAxes)
+    plt.text(.14,.03,s,fontsize=size-2,transform=ax.transAxes)
     plt.xticks(size=size-4)
     plt.yticks(size=size-4)
     plt.xlabel("DFT Energy (eV/atom)",size=size)
@@ -55,10 +59,13 @@ def inference_plot(data_dir:str):
 
     plt.plot(dft_F, MLFF_F,"o",markersize=3,c="C0")
     plt.plot([F_min,F_max],[F_min,F_max],"--",lw=1.2,c="C1")
-    plt.axis([F_min*1.02,F_max*1.02,F_min*1.02,F_max*1.02])
+    # plt.axis([F_min*1.02,F_max*1.02,F_min*1.02,F_max*1.02])
+    f_r2 = r2_score(dft_F, MLFF_F)
     s = r"RMSE of Force is %.3f eV/$\mathrm{\AA}$" % rmse_F
+    sr2=r"R$^2$ = %.3f" % f_r2
     ax = plt.gca()
-    plt.text(.15,.05,s,fontsize=size,transform=ax.transAxes)
+    plt.text(.4,.125,sr2,fontsize=size-2,transform=ax.transAxes)
+    plt.text(.14,.03,s,fontsize=size-2,transform=ax.transAxes)
     plt.xticks(size=size-4)
     plt.yticks(size=size-4)
     plt.xlabel(r"DFT Force (eV/$\mathrm{\AA}$)",size=size)
@@ -71,10 +78,13 @@ def inference_plot(data_dir:str):
     if rmse_V is not None and len(dft_V) > 0 :
         plt.plot(dft_V, MLFF_V,"o",markersize=3,c="C0")
         plt.plot([V_min,V_max],[V_min,V_max],"--",lw=1.2,c="C1")
-        plt.axis([V_min*1.02,V_max*1.02,V_min*1.02,V_max*1.02])
+        # plt.axis([V_min*1.02,V_max*1.02,V_min*1.02,V_max*1.02])
+        v_r2 = r2_score(dft_V, MLFF_V)
         s = r"RMSE of Virial is %.3f eV/atom" % rmse_V
+        sr2=r"R$^2$ = %.3f" % v_r2
         ax = plt.gca()
-        plt.text(.15,.05,s,fontsize=size,transform=ax.transAxes)
+        plt.text(.4,.125,sr2,fontsize=size,transform=ax.transAxes)
+        plt.text(.14,.03,s,fontsize=size-2,transform=ax.transAxes)
         plt.xticks(size=size-4)
         plt.yticks(size=size-4)
         plt.xlabel(r"DFT Virial (eV/atom)",size=size)
@@ -83,7 +93,10 @@ def inference_plot(data_dir:str):
         plt.tight_layout()
         plt.savefig(os.path.join(data_dir, "Virial.png"), dpi=360)
         plt.close()
+    else:
+        v_r2 = 0.000
+        rmse_V = 0.000
+    return rmse_E, rmse_F, rmse_V, e_r2, f_r2, v_r2
 
-    return rmse_E, rmse_F, rmse_V
 if __name__=="__main__":
-    inference_plot("/data/home/wuxingxing/codespace/PWMLFF_grad_opt/src/test/test_workdir/2_dev_gpu_NN_LKF/work_test_dir/test_result")
+    inference_plot("/data/home/wuxingxing/datas/pwmat_mlff_workdir/fec/std/test/test_result")

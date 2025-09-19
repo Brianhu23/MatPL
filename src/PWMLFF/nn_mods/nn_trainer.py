@@ -757,21 +757,6 @@ def predict(train_loader, model, criterion, device, args:InputParam):
             res_pd.loc[res_pd.shape[0]] = res_list
 
     # print infos
-    inference_cout = ""
-    inference_cout += "For {} images: \n".format(res_pd.shape[0])
-    inference_cout += "Avarage REMSE of Etot: {} \n".format(res_pd['RMSE_Etot'].mean())
-    inference_cout += "Avarage REMSE of Etot per atom: {} \n".format(res_pd['RMSE_Etot_per_atom'].mean())
-    inference_cout += "Avarage REMSE of Ei: {} \n".format(res_pd['RMSE_Ei'].mean())
-    inference_cout += "Avarage REMSE of RMSE_F: {} \n".format(res_pd['RMSE_F'].mean())
-    if args.optimizer_param.train_egroup:
-        inference_cout += "Avarage REMSE of RMSE_Egroup: {} \n".format(res_pd['RMSE_Egroup'].mean())
-    if args.optimizer_param.train_virial:
-        inference_cout += "Avarage REMSE of RMSE_virial: {} \n".format(res_pd['RMSE_virial'].mean())
-        inference_cout += "Avarage REMSE of RMSE_virial_per_atom: {} \n".format(res_pd['RMSE_virial_per_atom'].mean())
-    
-    inference_cout += "\nMore details can be found under the file directory:\n{}\n".format(os.path.realpath(args.file_paths.test_dir))
-    print(inference_cout)
-
     inference_path = args.file_paths.test_dir
     if os.path.exists(inference_path) is False:
         os.makedirs(inference_path)
@@ -788,14 +773,23 @@ def predict(train_loader, model, criterion, device, args:InputParam):
 
     res_pd.to_csv(os.path.join(inference_path, "inference_loss.csv"))
 
-    # if args.file_paths.alive_atomic_energy:
-    #     if args.optimizer_param.train_ei or args.optimizer_param.train_egroup:
-    #         plot_ei = True
-    #     else:
-    #         plot_ei = False
-    # else:
-    #     plot_ei = False
-    inference_plot(inference_path)
+    rmse_E, rmse_F, rmse_V, e_r2, f_r2, v_r2 = inference_plot(inference_path)
+    inference_cout = ""
+    inference_cout += "For {} images:\n".format(res_pd.shape[0])
+    # inference_cout += "Average REMSE of Etot: {} R2: {}\n".format(res_pd['RMSE_Etot'].mean(), e_r2)
+    inference_cout += "Average REMSE of Etot per atom: {} R2: {}\n".format(rmse_E, e_r2)
+    # inference_cout += "Average REMSE of Ei: {}\n".format(res_pd['RMSE_Ei'].mean())
+    inference_cout += "Average REMSE of Force: {} R2: {}\n".format(res_pd['RMSE_F'].mean(), f_r2)
+    if args.optimizer_param.train_egroup:
+        inference_cout += "Average REMSE of Egroup: {}\n".format(res_pd['RMSE_Egroup'].mean())
+    if args.optimizer_param.train_virial:
+        # inference_cout += "Average REMSE of Virial: {}\n".format(res_pd['RMSE_virial'].mean())
+        inference_cout += "Average REMSE of Virial per atom: {} R2: {}\n".format(rmse_V, v_r2)
+    else:
+        inference_cout += "Average REMSE of Virial per atom: {} R2: {}\n".format(0.000, 0.000)
+    print("\nMore details can be found under the file directory:\n{}\n".format(args.file_paths.json_dir))
+    print(inference_cout)
+    # inference_plot(inference_path)
 
     with open(os.path.join(inference_path, "inference_summary.txt"), 'w') as wf:
         wf.writelines(inference_cout)
