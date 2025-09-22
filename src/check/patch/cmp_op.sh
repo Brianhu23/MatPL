@@ -7,9 +7,14 @@ NEP_TYPES=20  # 默认值
 PATCH_DIR=$(pwd)
 BASE_DIR=$1
 VERSION=$2
-ENV_DIR=${BASE_DIR}/matpl-${VERSION}
 MATPL_DIR=${BASE_DIR}/$3
 CLEAN_ALL=$4
+CPU_ONLY=$5
+if [ $CPU_ONLY -eq 0 ]; then
+  ENV_DIR=${BASE_DIR}/matpl-${VERSION}
+else
+  ENV_DIR=${BASE_DIR}/matpl_cpu-${VERSION}
+fi
 source $ENV_DIR/bin/activate
 
 echo "patch file dir is $PATCH_DIR"

@@ -9,10 +9,21 @@ BASE_DIR=$1
 VERSION=$2
 MATPL_DIR=${BASE_DIR}/$3
 CLEAN_ALL=$4
+CPU_ONLY=$5
+if [ $CPU_ONLY -eq 0 ]; then
+  ENV_DIR=${BASE_DIR}/matpl-${VERSION}
+else
+  ENV_DIR=${BASE_DIR}/matpl_cpu-${VERSION}
+fi
 echo "patch file dir is $PATCH_DIR"
 echo "MatPL root dir is $BASE_DIR"
+echo "ENV   root dir is $ENV_DIR"
+#ls $BASE_DIR
+
+source $ENV_DIR/bin/activate
 cd $MATPL_DIR/src
 
+ls $MATPL_DIR/src
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -52,6 +63,7 @@ mkdir -p lib
 $MAKE_CMD -C pre_data/gen_feature
 $MAKE_CMD -C pre_data/fit
 $MAKE_CMD -C pre_data/fortran_code  # spack load gcc@7.5.0
+$MAKE_CMD -C md/fortran_code
 
 cd bin
 
@@ -63,7 +75,7 @@ cd bin
 #ln -s ../../utils/plot_nn_test.py . 
 #ln -s ../../utils/plot_mlff_inference.py .
 #ln -s ../../utils/read_torch_wij_dp.py . 
-#ln -s ../md/fortran_code/main_MD.x .
+ln -s ../md/fortran_code/main_MD.x .
 
 ln -s ../../main.py ./MATPL
 ln -s ../../main.py ./matpl

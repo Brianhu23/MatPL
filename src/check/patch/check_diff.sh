@@ -122,6 +122,7 @@ else
     else
         echo " NEP_GPU directory does not exist in A or B"
     fi
+fi
 echo "----------------------------------------"
 # 4. Check src/op directory (excluding build)
 echo "4. Checking src/op directory..."
@@ -215,6 +216,71 @@ else
     echo " src/pre_data directory does not exist in A or B"
 fi
 echo "----------------------------------------"
+echo "Checking src/md directory and all .f90 files..."
+md_dir_A="$A_ROOT/src/md"
+md_dir_B="$B_ROOT/src/md"
+
+if [ -d "$md_dir_A" ] && [ -d "$md_dir_B" ]; then
+    # 创建临时文件来存储find结果
+    tmp_f90_md_a=$(mktemp)
+    tmp_f90_md_b=$(mktemp)
+    
+    # 查找所有.f90文件
+    find "$md_dir_A" -type f -name "*.f90" > "$tmp_f90_md_a"
+    find "$md_dir_B" -type f -name "*.f90" > "$tmp_f90_md_b"
+    
+    echo "Fortran (.f90) file differences in src/md:"
+    # 检查A_ROOT中的.f90文件
+    while IFS= read -r file_a; do
+        # 获取相对路径
+        rel_path=${file_a#$A_ROOT/}
+        file_b="$B_ROOT/$rel_path"
+        if [ -f "$file_b" ]; then
+            # 文件在A和B中都存在，比较内容
+            if ! diff -q "$file_a" "$file_b" > /dev/null 2>&1; then
+                echo " Modified: $rel_path"
+                fortran_change=1
+            fi
+        else
+            # 文件只在A中存在
+            echo " Added: $rel_path"
+            fortran_change=1
+        fi
+    done < "$tmp_f90_md_a"
+    
+    # 检查B_ROOT中独有的.f90文件
+    while IFS= read -r file_b; do
+        rel_path=${file_b#$B_ROOT/}
+        file_a="$A_ROOT/$rel_path"
+        if [ ! -f "$file_a" ]; then
+            echo " Deleted: $rel_path"
+            fortran_change=1
+        fi
+    done < "$tmp_f90_md_b"
+    
+    # 清理临时文件
+    rm -f "$tmp_f90_md_a" "$tmp_f90_md_b"
+    
+    # 输出结果
+    if [ $fortran_change -eq 0 ]; then
+        echo " No changes in Fortran (.f90) files in src/md"
+    else
+        echo " Changes detected in Fortran (.f90) files in src/md"
+    fi
+    
+elif [ ! -d "$md_dir_A" ] && [ -d "$md_dir_B" ]; then
+    fortran_change=1
+    echo " src/md directory deleted"
+    echo " Changes detected in Fortran files in src/md"
+elif [ -d "$md_dir_A" ] && [ ! -d "$md_dir_B" ]; then
+    fortran_change=1
+    echo " src/md directory added"
+    echo " Changes detected in Fortran files in src/md"
+else
+    echo " src/md directory does not exist in A or B"
+fi
+echo "----------------------------------------"
+
 # 6. Check lammps-libtorch related files and directories
 echo "6. Checking lammps-libtorch related files and directories..."
 lmp_matpl_dir_A="$A_ROOT/src/lmps/lammps-libtorch/MATPL"

@@ -55,7 +55,7 @@ cd $LAMMPS_FORTRAN/src/MATPL/fortran_code
       make clean
   fi
   if [ $JOB_COUNT -gt 1 ]; then
-      make -j$JOB_COUNT
+      make -j1 # $JOB_COUNT
   else
       make
   fi

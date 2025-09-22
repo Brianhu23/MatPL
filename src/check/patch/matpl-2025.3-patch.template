@@ -442,7 +442,7 @@ if [ $fortran_change -eq 1 ]; then
     echo "Compiling Fortran module..."    
     CMP_FORTRAN_SCRIPT="${TMP_EXTRACT_DIR}/cmp_fortran.sh"
     if [ -f "$CMP_FORTRAN_SCRIPT" ]; then
-        bash "${CMP_FORTRAN_SCRIPT}" "${BASE_DIR}" "${VERSION}" "${MATPL_PREFIX}${VERSION}" "${CLEAN_ALL}" -j"${JOB_COUNT}"
+        bash "${CMP_FORTRAN_SCRIPT}" "${BASE_DIR}" "${VERSION}" "${MATPL_PREFIX}${VERSION}" "${CLEAN_ALL}" "${CPU_ONLY}" -j1 # "${JOB_COUNT}" has error in compile
         if [ $? -ne 0 ]; then
             echo "Error: fortran compilation failed"
             compile_errors=1
@@ -494,7 +494,7 @@ if [ $op_change -eq 1 ] && [ $compile_errors -eq 0 ]; then
     CMP_OP_SCRIPT="${TMP_EXTRACT_DIR}/cmp_op.sh"
     if [ -f "$CMP_OP_SCRIPT" ]; then
         # Use default value 20 if -n parameter is not specified
-        bash "${CMP_OP_SCRIPT}" "${BASE_DIR}" "${VERSION}" "${MATPL_PREFIX}${VERSION}" "${CLEAN_ALL}" -j"${JOB_COUNT}" -n"${NEP_TYPES}"
+        bash "${CMP_OP_SCRIPT}" "${BASE_DIR}" "${VERSION}" "${MATPL_PREFIX}${VERSION}" "${CLEAN_ALL}" "${CPU_ONLY}" -j"${JOB_COUNT}" -n"${NEP_TYPES}"
         if [ $? -ne 0 ]; then
             echo "Error: OP compilation failed"
             compile_errors=1

@@ -41,7 +41,7 @@ mkdir -p lib
 $MAKE_CMD -C pre_data/gen_feature
 $MAKE_CMD -C pre_data/fit
 $MAKE_CMD -C pre_data/fortran_code  # spack load gcc@7.5.0
-#$MAKE_CMD -C md/fortran_code
+$MAKE_CMD -C md/fortran_code
 
 # make nep-cpu interface
 cd feature/nep_find_neigh
@@ -69,7 +69,7 @@ cd bin
 #ln -s ../../utils/plot_nn_test.py . 
 #ln -s ../../utils/plot_mlff_inference.py .
 #ln -s ../../utils/read_torch_wij_dp.py . 
-#ln -s ../md/fortran_code/main_MD.x .
+ln -s ../md/fortran_code/main_MD.x .
 
 ln -s ../../main.py ./MATPL
 ln -s ../../main.py ./matpl

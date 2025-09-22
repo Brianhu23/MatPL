@@ -36,7 +36,6 @@ rm -rf matpl-patch-*.tar.gz  matpl-patch-*.tar.gz.base64 matpl-patch-*.sh
 tar --exclude="$SOURCE_DIR/.git" \
     --exclude="$SOURCE_DIR/.gitignore" \
     --exclude="$SOURCE_DIR/example" \
-    --exclude="$SOURCE_DIR/src/md" \
     -czf "$OUTPUT_TARFILE" "$SOURCE_DIR" "$PWACT_DIR" "$PWDATA_DIR" check_offenv.sh check_diff.sh cmp_pip.sh cmp_nepcpu.sh cmp_nepgpu.sh cmp_op.sh cmp_fortran.sh cmp_lmps.sh cmp_lmps_fortran.sh
 
 # 将 tar.gz 文件编码成 base64
