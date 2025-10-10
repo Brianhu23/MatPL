@@ -91,9 +91,11 @@ class InputParam(object):
         #     nep_param.set_nep_param_from_nep_in(nep_in_file, self.atom_type)
         nep_txt_file = get_parameter("nep_txt_file", json_input, None)
         if nep_txt_file is not None:
-            nep_param.set_nep_nn_c_param_from_nep_txt(nep_txt_file)
+            nep_param.set_nep_nn_c_param_from_nep_txt(nep_txt_file, self.atom_type)
         else:
             nep_param.set_nep_param_from_json(json_input, self.atom_type)
+        # if fixed
+        nep_param.set_fixed_params(json_input)
         self.nep_param = nep_param
         self.model_param.fitting_net.network_size = nep_param.neuron
         self.descriptor.cutoff = nep_param.cutoff

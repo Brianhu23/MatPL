@@ -57,16 +57,18 @@ class NEP(nn.Module):
                                                     magic     = False,
                                                     nep_txt_param = nep_txt_param,
                                                     last_bias= True,
+                                                    fix_hiddenlayer=self.input_param.nep_param.fix_hiddenlayer,
+                                                    fix_outlayer=self.input_param.nep_param.fix_outlayer
                                                     #    self.nep_param["net_cfg"]["fitting_net"]["resnet_dt"],
                                                     #    self.nep_param["net_cfg"]["fitting_net"]["activation"], 
                                                     ))
         self.max_neigh_num = self.input_param.max_neigh_num
-        self.max_NN_radial = -1 
-        self.max_NN_angular = -1
+        self.max_NN_radial = -1 if self.input_param.nep_param.max_NN_radial is None else self.input_param.nep_param.max_NN_radial
+        self.max_NN_angular = -1 if self.input_param.nep_param.max_NN_angular is None else self.input_param.nep_param.max_NN_angular
 
     '''
     description: 
-        for nep.txt 
+        for nep.txt ,no used, the params were extracted from ckpt files
     param {*} self
     return {*}
     author: wuxingxing
@@ -151,10 +153,11 @@ class NEP(nn.Module):
     author: wuxingxing
     '''    
     def set_cparam(self, energy_shift:float):
+        cij_requires_grad = self.input_param.nep_param.fix_cij is False
         if self.input_param.nep_param.c2_param is not None: #load from nep.txt
-            self.c_param_2 = torch.nn.Parameter(torch.tensor(self.input_param.nep_param.c2_param), requires_grad=True)
+            self.c_param_2 = torch.nn.Parameter(torch.tensor(self.input_param.nep_param.c2_param), requires_grad=cij_requires_grad)
             
-            self.c_param_3 = torch.nn.Parameter(torch.tensor(self.input_param.nep_param.c3_param), requires_grad=True) if self.l_max_3b > 0 else None
+            self.c_param_3 = torch.nn.Parameter(torch.tensor(self.input_param.nep_param.c3_param), requires_grad=cij_requires_grad) if self.l_max_3b > 0 else None
             # add bias
             
         else: # init by randly (for first training) or checkpoint
@@ -162,8 +165,8 @@ class NEP(nn.Module):
             m = torch.rand(self.c_num, dtype=self.dtype) - 0.5
             s = torch.full_like(m, 0.1)
             c_param = m + s*r_k
-            self.c_param_2 = torch.nn.Parameter(c_param[:self.two_c_num].reshape(self.ntypes, self.ntypes, (self.n_max_radial+1), (self.n_base_radial+1)), requires_grad=True)
-            self.c_param_3 = torch.nn.Parameter(c_param[self.two_c_num : ].reshape(self.ntypes, self.ntypes, (self.n_max_angular+1), (self.n_base_angular+1)), requires_grad=True)  if self.l_max_3b > 0 else None
+            self.c_param_2 = torch.nn.Parameter(c_param[:self.two_c_num].reshape(self.ntypes, self.ntypes, (self.n_max_radial+1), (self.n_base_radial+1)), requires_grad=cij_requires_grad)
+            self.c_param_3 = torch.nn.Parameter(c_param[self.two_c_num : ].reshape(self.ntypes, self.ntypes, (self.n_max_angular+1), (self.n_base_angular+1)), requires_grad=cij_requires_grad)  if self.l_max_3b > 0 else None
 
             # self.c_param_2 = torch.nn.Parameter(torch.ones([self.ntypes, self.ntypes, (self.n_max_radial+1), (self.n_base_radial+1)]), requires_grad=False)
             # self.c_param_3 = torch.nn.Parameter(torch.ones([self.ntypes, self.ntypes, (self.n_max_angular+1), (self.n_base_angular+1)]), requires_grad=False)

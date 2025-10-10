@@ -3,6 +3,8 @@ import numpy as np
 import torch
 from utils.atom_type_emb_dict import element_table
 from utils.json_operation import get_parameter
+from utils.nep_to_gpumd import get_atomic_name_from_str
+
 '''
 description: 
  this NEP params default value is the same as 
@@ -33,7 +35,9 @@ class NepParam(object):
         self.max_NN_radial = None
         self.max_NN_angular = None
         self.max_nn_from_txt = False
-
+        self.fix_cij = False
+        self.fix_hiddenlayer=False
+        self.fix_outlayer=False
     '''
     description: 
         extract nep params from nep.in file
@@ -94,7 +98,7 @@ class NepParam(object):
     return {*}
     author: wuxingxing
     '''    
-    def set_nep_nn_c_param_from_nep_txt(self, nep_txt_file:str):
+    def set_nep_nn_c_param_from_nep_txt(self, nep_txt_file:str, atom_type_train:list[int]=None):
         self.nep_txt_file = nep_txt_file
         with open(nep_txt_file, "r") as rf:
             lines =rf.readlines()
@@ -103,6 +107,17 @@ class NepParam(object):
 
         line_1 = lines[0].split()
         version, type_num, type_list = line_1[0], int(line_1[1]), line_1[2:]
+        type_list = get_atomic_name_from_str(type_list)
+
+        set1, set2 = set(atom_type_train), set(type_list)
+        only_in_arr1 = set1 - set2
+        only_in_arr2 = set2 - set1
+        if len(only_in_arr1) > 0:
+            raise Exception("ERROR! The element type specified by the 'atom_type' parameter is not contained in the nep.txt file! ")
+        if len(only_in_arr2) > 0:
+            print("Extracting the training parameters corresponding to the specified element type from nep.txt:")
+            print(f"the atom type in nep.txt:\n {type_list}")
+            print(f"the target atom type:\n {atom_type_train}")
         self.type_num = type_num
         self.zbl = None
         use_zbl = False
@@ -216,6 +231,23 @@ class NepParam(object):
             if start_index != line_num:
                 raise Exception("extract the nep.txt {} error! the params need {} but has {}\n".format(nep_txt_file, start_index, len(lines)))
 
+        if atom_type_train is not None:
+            # 根据输入，重新调整元素类型对应的参数顺序
+            _nn_param = []
+            index = []
+            
+            for atom_in in atom_type_train:
+                _index = type_list.index(atom_in)
+                index.append(_index)
+                _nn_param.append(self.model_wb[_index*3])
+                _nn_param.append(self.model_wb[_index*3+1])
+                _nn_param.append(self.model_wb[_index*3+2])
+            self.model_wb = _nn_param
+            self.c2_param = self.c2_param[index, :, :, :][:, index, :, :]
+            self.c3_param = self.c3_param[index, :, :, :][:, index, :, :]
+            self.type_num = len(atom_type_train)
+            self.bias_lastlayer = self.bias_lastlayer[index]
+
     '''
     description: 
     extract nep params from input json file
@@ -264,11 +296,21 @@ class NepParam(object):
             self.neuron = get_parameter("network_size", model_dict["fitting_net"], [40]) # number of neurons in the hidden layer
             if not isinstance(self.neuron, list):
                 self.neuron = [self.neuron]
+            self.fix_cij = get_parameter("fix_cij", model_dict["fitting_net"], False)
+            self.fix_hiddenlayer =get_parameter("fix_hiddenlayer", model_dict["fitting_net"], False)
+            self.fix_outlayer =get_parameter("fix_outlayer", model_dict["fitting_net"], False)        
         else:
             self.neuron = [40]
         if self.neuron[-1] != 1:
             self.neuron.append(1) # output layer of fitting net
         self.set_feature_params()
+
+    def set_fixed_params(self, json_dict):
+        model_dict = get_parameter("model", json_dict, {})
+        if "fitting_net" in model_dict.keys():
+            self.fix_cij = get_parameter("fix_cij", model_dict["fitting_net"], False)
+            self.fix_hiddenlayer =get_parameter("fix_hiddenlayer", model_dict["fitting_net"], False)
+            self.fix_outlayer =get_parameter("fix_outlayer", model_dict["fitting_net"], False)
 
     def set_feature_params(self):
         # features

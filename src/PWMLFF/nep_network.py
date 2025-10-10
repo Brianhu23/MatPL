@@ -166,21 +166,21 @@ class nep_network:
         # optionally resume from a checkpoint
         checkpoint = None
 
-        if self.input_param.recover_train and \
-            self.input_param.file_paths.model_load_path is not None and os.path.exists(self.input_param.file_paths.model_load_path): 
+        if self.input_param.inference: # recover from user input ckpt file for inference work
             model_path = self.input_param.file_paths.model_load_path
-
-        elif self.input_param.inference: # recover from user input ckpt file for inference work
-            model_path = self.input_param.file_paths.model_load_path
-        else: # resume model specified by user
-            if self.input_param.nep_param.model_wb is None:
+        else: # for training 
+            model_path = None 
+            if self.input_param.recover_train:
                 if self.input_param.file_paths.model_load_path is not None and \
-                    os.path.exists(self.input_param.file_paths.model_load_path): # 优先从model_load_path 加载模型
+                    os.path.exists(self.input_param.file_paths.model_load_path): # Prioritize loading models from model_load_path
                     model_path = self.input_param.file_paths.model_load_path
-                else:    
-                    model_path = self.input_param.file_paths.model_save_path  #recover from last training for training
-            else:
-                model_path = None
+                elif os.path.exists(self.input_param.file_paths.model_save_path):   
+                    model_path = self.input_param.file_paths.model_save_path  # recover from last training
+            
+            if model_path is not None and \
+                    self.input_param.nep_param.model_wb is not None and len(self.input_param.nep_param.model_wb) > 0:
+                raise Exception(f"ERROR! Multiple source model paths detected, please check the {model_path} directory, parameter 'model_load_file or 'nep_txt_file'!")
+
         if model_path is not None and os.path.isfile(model_path):
             print("=> loading checkpoint '{}'".format(model_path))
             if not torch.cuda.is_available():
@@ -208,7 +208,7 @@ class nep_network:
             if "compress" in checkpoint.keys():
                 model.set_comp_tab(checkpoint["compress"])
         else:
-            print("=> no checkpoint found at '{}'".format(model_path))
+            print("=> no checkpoint file found at '{}'".format(model_path))
 
         if not torch.cuda.is_available():
             print("using CPU")
@@ -284,7 +284,8 @@ class nep_network:
         q_scaler = None
         if checkpoint is not None and "q_scaler" in checkpoint.keys(): # from model ckpt file
             q_scaler = checkpoint["q_scaler"]
-
+        elif self.input_param.nep_param.q_scaler is not None:
+            q_scaler = self.input_param.nep_param.q_scaler
         if self.input_param.optimizer_param.opt_name in ["LKF", "GKF", "ADAM", "ADAMW", "SGD"]:
             if checkpoint is not None and "optimizer" in checkpoint.keys():
                 optimizer.load_state_dict(checkpoint["optimizer"])

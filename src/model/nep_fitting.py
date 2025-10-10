@@ -31,11 +31,13 @@ class LayerModule(nn.Module):
     def __init__(self, 
                  weight: torch.Tensor, 
                  bias: torch.Tensor = None, 
-                 resnet_dt: torch.Tensor = None):
+                 resnet_dt: torch.Tensor = None,
+                 fixed:bool = False):
         super(LayerModule, self).__init__()
-        self.weight = nn.Parameter(weight, requires_grad=True)
-        self.bias = nn.Parameter(bias, requires_grad=True) if bias is not None else None
-        self.resnet_dt = nn.Parameter(resnet_dt, requires_grad=True) if resnet_dt is not None else None
+        requires_grad = fixed is False
+        self.weight = nn.Parameter(weight, requires_grad=requires_grad)
+        self.bias = nn.Parameter(bias, requires_grad=requires_grad) if bias is not None else None
+        self.resnet_dt = nn.Parameter(resnet_dt, requires_grad=requires_grad) if resnet_dt is not None else None
 
 class FittingNet(nn.Module):
 
@@ -48,7 +50,10 @@ class FittingNet(nn.Module):
                  ener_shift: float, 
                  magic = False,
                  nep_txt_param: List[np.array]=None,
-                 last_bias:bool=True):
+                 last_bias:bool=True,
+                 fix_hiddenlayer:bool=False,
+                 fix_outlayer:bool=False
+                 ):
         super(FittingNet, self).__init__()
         self.network_size = [input_dim] + network_size
         self.bias_flag = bias
@@ -78,7 +83,7 @@ class FittingNet(nn.Module):
                 resnet_dt = torch.Tensor(1, self.network_size[i])
                 normal(resnet_dt, mean=0.1, std=0.001)
 
-            self.layers.append(LayerModule(wij, bias, resnet_dt))
+            self.layers.append(LayerModule(wij, bias, resnet_dt, fix_hiddenlayer))
         
         i = len(self.network_size) - 1
         if from_nep_txt:
@@ -93,9 +98,9 @@ class FittingNet(nn.Module):
                 normal(bias_init, mean=ener_shift, std=1.0)
         
         if self.last_bias:
-            self.layers.append(LayerModule(wij, bias_init, None))
+            self.layers.append(LayerModule(wij, bias_init, None, fix_outlayer))
         else:
-            self.layers.append(LayerModule(wij, None, None))
+            self.layers.append(LayerModule(wij, None, None, fix_outlayer))
     
     '''
     description: 
