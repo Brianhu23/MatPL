@@ -359,7 +359,9 @@ class NEP(nn.Module):
                                                 atom_type_map,
                                                 feat_2b, 
                                                 self.cutoff_radial,
-                                                self.multi_feat_num)[0]
+                                                self.multi_feat_num,
+                                                int(self.input_param.nep_param.fix_cij)
+                                                )[0]
             if self.l_max_3b > 0:
                 feat_3b = torch.zeros(natoms_sum, self.multi_feat_num, dtype=dtype, device=device, requires_grad=True)
                 feat_3b = CalcOps.calculateNepMbFeat(self.c_param_3, 
@@ -371,7 +373,8 @@ class NEP(nn.Module):
                                                         self.l_max_3b, 
                                                         self.l_max_4b, 
                                                         self.l_max_5b, 
-                                                        self.cutoff_angular)[0]
+                                                        self.cutoff_angular,
+                                                        int(self.input_param.nep_param.fix_cij))[0]
 
                 if self.train_2b:
                     feats = torch.concat([feat_2b, feat_3b], dim=-1)

@@ -139,7 +139,8 @@ class CalculateNepFeat : public torch::autograd::Function<CalculateNepFeat> {
             at::Tensor atom_map,
             at::Tensor feats,
             double rcut_radial,
-            int64_t multi_feat_num);
+            int64_t multi_feat_num,
+            int64_t fix_cij);
 
         static torch::autograd::variable_list backward(
             torch::autograd::AutogradContext *ctx,
@@ -158,7 +159,8 @@ class CalculateNepFeatGrad : public torch::autograd::Function<CalculateNepFeatGr
             at::Tensor dfeat_2b,
             at::Tensor dfeat_2b_noc,
             at::Tensor atom_map,
-            int64_t multi_feat_num);
+            int64_t multi_feat_num,
+            int64_t fix_cij);
 
         static torch::autograd::variable_list backward(
             torch::autograd::AutogradContext *ctx,
@@ -172,7 +174,8 @@ torch::autograd::variable_list calculateNepFeat(
     at::Tensor atom_map,
     at::Tensor feats,
     double rcut_radial,
-    int64_t feat_multi_nums);
+    int64_t feat_multi_nums,
+    int64_t fix_cij);
 
 
 // the following is the code nep multi feature
@@ -189,7 +192,8 @@ class CalculateNepMbFeat : public torch::autograd::Function<CalculateNepMbFeat> 
             int64_t lmax_3,
             int64_t lmax_4,
             int64_t lmax_5,
-            double rcut_angluar);
+            double rcut_angluar,
+            int64_t fix_cij);
 
         static torch::autograd::variable_list backward(
             torch::autograd::AutogradContext *ctx,
@@ -213,7 +217,8 @@ class CalculateNepMbFeatGrad : public torch::autograd::Function<CalculateNepMbFe
             int64_t lmax_3,
             int64_t lmax_4,
             int64_t lmax_5,
-            double rcut_angluar
+            double rcut_angluar,
+            int64_t fix_cij
             );
 
         static torch::autograd::variable_list backward(
@@ -231,7 +236,8 @@ torch::autograd::variable_list calculateNepMbFeat(
     int64_t lmax_3,
     int64_t lmax_4,
     int64_t lmax_5,
-    double rcut_angluar);
+    double rcut_angluar,
+    int64_t fix_cij);
 
 //nep force
 class CalculateNepForce : public torch::autograd::Function<CalculateNepForce> {
