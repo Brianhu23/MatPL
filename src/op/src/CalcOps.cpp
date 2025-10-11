@@ -623,7 +623,6 @@ torch::autograd::variable_list CalculateNepFeatGrad::backward(
         // 对C的导数
         auto gradsecond_c2 = torch::zeros({atom_types, atom_types, n_max_2b, n_base_2b}, coeff2.options());
         if (fix_cij == 0) {
-        printf("============calc second c2 ==========\n");
         torch_launch_calculate_nepfeat_secondgradout_c2(grad_second[1], de_feat, dfeat_2b_noc, atom_map, NL_radial, 
                             atom_nums, maxneighs, n_max_2b, n_base_2b, atom_types, multi_feat_num, gradsecond_c2);
         }
@@ -971,7 +970,6 @@ torch::autograd::variable_list CalculateNepMbFeatGrad::backward(
 
         auto gradsecond_c3 = torch::zeros({atom_types, atom_types, n_max, n_base}, coeff3.options());
         if (fix_cij == 0) {
-        printf("============calc second c3 ==========\n");
         torch_launch_calculate_nepmbfeat_secondgradout_c3(grad_second[1],
                                                             d12,
                                                             NL,
