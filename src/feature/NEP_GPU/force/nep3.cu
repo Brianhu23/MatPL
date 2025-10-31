@@ -561,8 +561,8 @@ void NEP3::inference(
   lmp_data.type.copy_from_host(itype_cpu);
   lmp_data.position.copy_from_host(position_cpu);
 
-  std::vector<double> tmp_posiion(N*3);
-  lmp_data.position.copy_to_host(tmp_posiion.data());
+  // std::vector<double> tmp_posiion(N*3);
+  // lmp_data.position.copy_to_host(tmp_posiion.data());
   // for (int i = 0; i < N; i++) {
   //   printf("p[%d]= %f %f %f \n",i, tmp_posiion[i], tmp_posiion[N+i], tmp_posiion[2*N+i]);
   // }

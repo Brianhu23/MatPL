@@ -38,10 +38,10 @@ echo "Using MAKE_CMD = $MAKE_CMD"
 
 mkdir -p bin
 mkdir -p lib
-$MAKE_CMD -C pre_data/gen_feature
-$MAKE_CMD -C pre_data/fit
-$MAKE_CMD -C pre_data/fortran_code  # spack load gcc@7.5.0
-$MAKE_CMD -C md/fortran_code
+make -C pre_data/gen_feature
+make -C pre_data/fit
+make -C pre_data/fortran_code  # spack load gcc@7.5.0
+make -C md/fortran_code
 
 # make nep-cpu interface
 cd feature/nep_find_neigh
