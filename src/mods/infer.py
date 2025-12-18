@@ -112,11 +112,12 @@ class Inference(object):
             # print(image.position)
             if not hasattr(image, 'atom_type_map'):
                 image.atom_type_map = np.array([self.model_atom_type.index(_) for _ in image.atom_types_image])
-            cart_postion = image.position
-            if image.cartesian is True:
-                image._set_fractional()
-            # if image.cartesian is False:
-            #     image._set_cartesian()
+
+            image2 = image
+            # if image.cartesian is True:
+            #     image._set_fractional()
+            if image.cartesian is False: # DP 统一修改为笛卡尔坐标集
+                image._set_cartesian()
             # atom_nums = image.atom_nums
             if ntypes > img_max_types:
                 raise Exception("Error! the atom types in structrue file is larger than the max atom types in model!")
@@ -138,22 +139,28 @@ class Inference(object):
             Rc_type = np.array([(_['Rc']) for _ in model_config["atomType"]])
             Rm_type = np.array([(_['Rm']) for _ in model_config["atomType"]])
             type_maps = np.array(type_map(atom_types_struc, input_atom_types)).reshape(1, -1)
-            # list_neigh, dR_neigh, _, _, _, _ = find_neighbore(type_maps, 
-            #                                                     position, lattice, natoms, Ei, 
-            #                                                 img_max_types, Rc_type, Rm_type, m_neigh, Rc_M, Egroup)   
             list_neigh, dR_neigh, max_ri, Egroup_weight, Divider, Egroup = \
                 find_neighbore(image.atom_type_map, 
-                                image.position, 
-                                image.lattice, 
-                                image.position.shape[0], 
-                                image.atomic_energy, 
-                                img_max_types, 
-                                Rc_type, 
-                                Rm_type, 
-                                m_neigh, 
-                                Rc_M, 
-                                Egroup
+                            np.array(image.lattice).transpose(1, 0).reshape(-1),
+                            np.array(image.position).transpose(1, 0).reshape(-1),
+                            Rc_type, 
+                            Rm_type, 
+                            Rc_M,
+                            m_neigh
                 )
+                # find_neighbore(image.atom_type_map, 
+                #                 image.position, 
+                #                 image.lattice, 
+                #                 image.position.shape[0], 
+                #                 image.atomic_energy, 
+                #                 img_max_types, 
+                #                 Rc_type, 
+                #                 Rm_type, 
+                #                 m_neigh, 
+                #                 Rc_M, 
+                #                 Egroup,
+                #                 image2
+                # )
 
             list_neigh = Variable(torch.tensor(np.expand_dims(list_neigh, axis=0)).int().to(self.device))
             type_maps = Variable(torch.tensor(type_maps, dtype=torch.int32).to(self.device))
@@ -181,7 +188,7 @@ class Inference(object):
                     print("\n")
             return etot_list, ei_list, force_list, virial_list
 
-    def ase_dp_infer(self, lattice, frac_postions, symbols): # for dp infer 
+    def ase_dp_infer(self, lattice, cart_postions, symbols): # for dp infer 
         Egroup = 0
         model_config = self.model.config
         m_neigh = self.model.maxNeighborNum
@@ -194,18 +201,28 @@ class Inference(object):
         type_maps = np.array(type_map(atom_type_list, input_atom_types)).reshape(1, -1)
 
         list_neigh, dR_neigh, max_ri, Egroup_weight, Divider, Egroup = \
-            find_neighbore(type_maps, 
-                            frac_postions, 
-                            lattice, 
-                            frac_postions.shape[0], 
-                            None, 
-                            self.model.ntypes, 
-                            Rc_type, 
-                            Rm_type, 
-                            m_neigh, 
-                            Rc_M, 
-                            Egroup
-            )
+            find_neighbore(
+                type_maps[0], 
+                np.array(lattice).transpose(1, 0).reshape(-1),
+                np.array(cart_postions).transpose(1, 0).reshape(-1),
+                Rc_type, 
+                Rm_type, 
+                Rc_M, 
+                m_neigh 
+                )
+                  
+            # find_neighbore(type_maps, 
+            #                 frac_postions, 
+            #                 lattice, 
+            #                 frac_postions.shape[0], 
+            #                 None, 
+            #                 self.model.ntypes, 
+            #                 Rc_type, 
+            #                 Rm_type, 
+            #                 m_neigh, 
+            #                 Rc_M, 
+            #                 Egroup
+            # )
 
         list_neigh = Variable(torch.tensor(np.expand_dims(list_neigh, axis=0)).int().to(self.device))
         type_maps = Variable(torch.tensor(type_maps, dtype=torch.int32).to(self.device))
@@ -241,9 +258,9 @@ class Inference(object):
         atom_types_struc = infer.atom_types_image
         atom_types = infer.atom_type[0]
         ntypes = len(atom_types)
-        position = infer.position.reshape(struc_num, -1, 3)
+        position = infer.position.reshape(-1, 3)
         natoms = position.shape[1]
-        lattice = infer.lattice.reshape(struc_num, 3, 3)
+        lattice = infer.lattice.reshape(3, 3)
         input_atom_types = np.array(self.model.atom_type)
         img_max_types = self.model.ntypes
         if ntypes > img_max_types:
@@ -253,9 +270,20 @@ class Inference(object):
         Rc_type = np.array([(_['Rc']) for _ in model_config["atomType"]])
         Rm_type = np.array([(_['Rm']) for _ in model_config["atomType"]])
         type_maps = np.array(type_map(atom_types_struc, input_atom_types)).reshape(1, -1)
-        list_neigh, dR_neigh, _, _, _, _ = find_neighbore(type_maps, position, lattice, natoms, Ei, 
-                                                          img_max_types, Rc_type, Rm_type, m_neigh, Rc_M, Egroup)   
-        
+        list_neigh, dR_neigh, _, _, _, _ = \
+            find_neighbore(
+                type_maps, 
+                np.array(infer.lattice).transpose(1, 0).reshape(-1),
+                np.array(infer.position).transpose(1, 0).reshape(-1),
+                Rc_type, 
+                Rm_type,
+                Rc_M, 
+                m_neigh
+            )
+            # find_neighbore(type_maps, position, lattice, natoms, Ei, 
+            #                                               img_max_types, Rc_type, Rm_type, m_neigh, Rc_M, Egroup)   
+
+
         list_neigh = self.to_tensor(list_neigh).unsqueeze(0)
         type_maps = self.to_tensor(type_maps).squeeze(0)
         atom_types = self.to_tensor(atom_types)

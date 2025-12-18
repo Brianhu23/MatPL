@@ -7,7 +7,6 @@ sys.path.append(codepath)
 #for model.mlff 
 sys.path.append(codepath+'/../model')
 
-#for default_para, data_loader_2type dfeat_sparse dp_mlff
 sys.path.append(codepath+'/../pre_data')
 
 #for optimizer

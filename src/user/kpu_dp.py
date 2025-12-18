@@ -5,7 +5,7 @@ import glob
 from src.PWMLFF.dp_network import dp_network
 from src.user.input_param import InputParam
 from pwdata import Save_Data
-from src.pre_data.dp_data_loader import type_map, find_neighbore
+from src.pre_data.dpuni_data_loader import type_map, find_neighbore
 from src.optimizer.KFWrapper import KFOptimizerWrapper
 
 class KPU_CALCULATE(object):
@@ -90,9 +90,18 @@ class KPU_CALCULATE(object):
         Rc_type = np.array([(_['Rc']) for _ in model_config["atomType"]])
         Rm_type = np.array([(_['Rm']) for _ in model_config["atomType"]])
         type_maps = np.array(type_map(atom_types_struc, input_atom_types)).reshape(1, -1)
-        list_neigh, dR_neigh, _, _, _, _ = find_neighbore(type_maps, position, lattice, natoms, Ei, 
-                                                          img_max_types, Rc_type, Rm_type, m_neigh, Rc_M, Egroup)   
-        
+        list_neigh, dR_neigh, _, _, _, _ = \
+            find_neighbore(
+                type_maps, 
+                lattice,
+                position, 
+                img_max_types, 
+                Rc_type, 
+                Rm_type, 
+                Rc_M, 
+                m_neigh 
+                )
+
         list_neigh = self.to_tensor(list_neigh).unsqueeze(0)
         type_maps = self.to_tensor(type_maps).squeeze(0)
         atom_types = self.to_tensor(atom_types)

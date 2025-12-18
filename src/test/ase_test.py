@@ -26,14 +26,11 @@ def atoms2xyzstr(atoms):
         (atoms[i].symbol,pos[i,0],pos[i,1],pos[i,2],forces[i,0],forces[i,1],forces[i,2])
     return xyzstr
 
-nep_path = "/data/home/wuxingxing/datas/debugs/ase/test_nep/nep_to_lmps.txt"
-# nep_path = "/data/home/wuxingxing/datas/debugs/ase/test_nep/nep_model.ckpt"
-train_path = "/data/home/wuxingxing/datas/debugs/ase/test_nep/train.xyz"
-output_file = "/data/home/wuxingxing/datas/debugs/ase/test_nep/gpu_train_out_ckpt.xyz"
-
-# nep_path = "/data/home/wuxingxing/datas/debugs/ase/test_dp/dp_model.ckpt"
-# train_path = "/data/home/wuxingxing/datas/debugs/ase/test_dp/train.xyz"
-# output_file = "/data/home/wuxingxing/datas/debugs/ase/test_dp/train_out_dpckpt.xyz"
+# 11_nep_model.ckpt  11_nep5.txt 12_dp_model.ckpt
+nep_path = "/data/home/wuxingxing/codespace/MatPL-2025.3/src/test/test_workdir_ase/11_nep_model.ckpt"
+# nep_path = "/data/home/wuxingxing/codespace/MatPL-2025.3/src/test/test_workdir_ase/12_dp_model.ckpt"
+train_path = "/data/home/wuxingxing/codespace/MatPL-2025.3/src/test/test_workdir_ase/train.xyz"
+output_file = "/data/home/wuxingxing/codespace/MatPL-2025.3/src/test/test_workdir_ase/train_out_nepcpuckpt.xyz"
 # test
 
 traj = io.read(train_path, index=":")

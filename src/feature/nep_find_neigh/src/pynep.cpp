@@ -40,6 +40,7 @@ The compute interface is used for inference in the PWMLFF test and inner interfa
 The find_neighbor interface is used for model training and adopts the score coordinates of PWMLFF.
 */
 #include "nep.h"
+#include "dp.h"
 #include <cmath>
 #include <fstream>
 #include <iomanip>
@@ -56,10 +57,19 @@ class FindNeigh
     FindNeigh();
     std::tuple<std::vector<double>, std::vector<double>, std::vector<int>, std::vector<int>, std::vector<int>, std::vector<int>> getNeigh(double, double, int, std::vector<int>, std::vector<double>, std::vector<double>);
     std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> inference(std::vector<int>, std::vector<double>, std::vector<double>);
+    std::tuple<std::vector<int>, std::vector<double>> getNeighDP( int ntypes, 
+                                                                  int max_neigh_num, 
+                                                                  double rcut,
+                                                                  std::vector<double>  rcut_type,
+                                                                  std::vector<int> atom_type_map,
+                                                                  std::vector<double> box,
+                                                                  std::vector<double> position);
+
     void allocate_memory(const int N);
     void init_model(const std::string& potential_filename);
   // private:
     NEP3_CPU calc;
+    DP_CPU  calc_dp;
     int num_atoms = 0;
     
     std::vector<double> potential;
@@ -69,7 +79,7 @@ class FindNeigh
 
 };
 
-FindNeigh::FindNeigh(): calc(NEP3_CPU()) {}
+FindNeigh::FindNeigh(): calc(NEP3_CPU()), calc_dp(DP_CPU()) {}
 
 void FindNeigh::init_model(const std::string& potential_filename) {
   calc.init_from_file(potential_filename, true);
@@ -111,12 +121,26 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<int>, std::vect
   // return std::make_tuple(calc.r12_radial, calc.NL_radial, calc.NLT_radial);
 }
 
+std::tuple<std::vector<int>, std::vector<double>> FindNeigh::getNeighDP(
+  int ntypes,
+  int max_neigh_num,
+  double rcut,
+  std::vector<double>  rcut_type,
+  std::vector<int> atom_type_map,
+  std::vector<double> box,
+  std::vector<double> position)
+{
+  calc_dp.find_neigh(ntypes, max_neigh_num, rcut, rcut_type, atom_type_map, box, position);
+  return std::make_tuple(calc_dp.dp_NL, calc_dp.dp_r12);
+}
+
 PYBIND11_MODULE(findneigh, m){
     m.doc() = "findneigh";
     py::class_<FindNeigh>(m, "FindNeigh")
     // .def("setAtoms", &FindNeigh::setAtoms)
 		.def(py::init())
     .def("getNeigh", &FindNeigh::getNeigh)
+    .def("getNeighDP", &FindNeigh::getNeighDP)
     .def("inference", &FindNeigh::inference)
     .def("init_model", &FindNeigh::init_model)
 		;

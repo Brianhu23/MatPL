@@ -1,20 +1,16 @@
 #!/usr/bin/env python
 import json
-import os, sys
+import os
+import sys
 import argparse
 from src.user.nep_work import nep_train, nep_test, nep_test_ckpt, togpumd
 from src.user.dp_work import dp_train, dp_test
-from src.user.nn_work import nn_train, gen_nn_feature, nn_test
 # from src.user.cheby_work import cheby_train, cheby_test
-from src.user.linear_work import linear_train, linear_test
 from src.user.envs import comm_info, matpl_help
-from src.user.active_work import ff2lmps_explore
 from utils.json_operation import get_parameter, get_required_parameter
-from utils.gen_multi_train import multi_train
 from src.user.ckpt_extract import extract_force_field, script_model
 from src.user.ckpt_compress import compress_force_field
 from src.user.infer_main import infer_main, model_devi
-from src.user.kpu_dp import KPU_CALCULATE
 
 if __name__ == "__main__":
     comm_info()
@@ -84,7 +80,7 @@ if __name__ == "__main__":
             args = parser.parse_args(sys.argv[2:])
             print(args.work_dir)
             os.chdir(args.work_dir)
-            
+            from src.user.kpu_dp import KPU_CALCULATE
             kpu = KPU_CALCULATE(args.model_path)
             kpu.kpu_dp(structure_dir=args.config, format=args.format, atom_names=args.atom_type, savepath=args.savepath, \
                 is_etot_kpu=True, is_force_kpu=True, force_kpu_detail=args.forcedetail)
@@ -100,14 +96,17 @@ if __name__ == "__main__":
             if model_num > 1 and cmd_type == "train".upper():
                 # for multi train, need to input slurm file
                 slurm_file = sys.argv[3]
+                from utils.gen_multi_train import multi_train
                 multi_train(json_path, cmd_type, slurm_file)
 
             if cmd_type == "train".upper():
                 if model_type == "DP".upper():
                     dp_train(json_file, cmd_type)
                 elif model_type == "NN".upper():
+                    from src.user.nn_work import nn_train
                     nn_train(json_file, cmd_type)
                 elif model_type == "Linear".upper():
+                    from src.user.linear_work import linear_train
                     linear_train(json_file, cmd_type)
                 elif model_type == "NEP".upper():
                     nep_train(json_file, cmd_type)
@@ -119,8 +118,10 @@ if __name__ == "__main__":
                 if model_type == "DP".upper():
                     dp_test(json_file, cmd_type)
                 elif model_type == "NN".upper():
+                    from src.user.nn_work import nn_test
                     nn_test(json_file, cmd_type)
                 elif model_type == "Linear".upper():
+                    from src.user.linear_work import linear_test
                     linear_test(json_file, cmd_type)
                 elif model_type == "NEP".upper():
                     nep_test(json_file, cmd_type)
@@ -135,12 +136,14 @@ if __name__ == "__main__":
                 if model_type == "DP".upper():
                     pass
                 elif model_type == "NN".upper():
+                    from src.user.nn_work import gen_nn_feature
                     gen_nn_feature(json_file, cmd_type)
                     # gen_nep_feature(json_file, cmd_type)
                 else:
                     raise Exception("Error! the model_type param in json file does not existent, you could use [DP/NN/LINEAR/NEP]")
             elif cmd_type == "explore".upper():
                 # for now, only support explore for DP model
+                from src.user.active_work import ff2lmps_explore
                 ff2lmps_explore(json_file)
     
         

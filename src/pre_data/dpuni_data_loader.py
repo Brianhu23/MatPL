@@ -10,7 +10,9 @@ from pwdata.image import Image
 # from src.feature.nep_find_neigh.findneigh import FindNeigh
 import random
 from typing import Union, Optional
-from src.lib.NeighConst import neighconst
+from src.feature.nep_find_neigh.findneigh import FindNeigh
+dpcalc = FindNeigh() # c++ inferface of dp findneighborlist
+
 from tqdm import tqdm
 if torch.cuda.is_available():
     lib_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "op/build/lib/libCalcOps_bind.so")
@@ -80,24 +82,24 @@ def variable_length_collate_fn_mn(batch):
     res["num_atom_sum"] = res["ImageAtomNum"].cumsum(0).to(res["ImageAtomNum"].dtype)
     return res
 
-class NepTestData():
-    def __init__(self, input_param:InputParam):
-        self.image_list = []
-        self.input_param = input_param
+# class NepTestData():
+#     def __init__(self, input_param:InputParam):
+#         self.image_list = []
+#         self.input_param = input_param
     
-        if len(self.input_param.file_paths.test_data_path) > 0:
-            for config in self.input_param.file_paths.test_data_path:
-                image_read = Config(data_path=config, format=self.input_param.file_paths.format).images
-                if isinstance(image_read, list):
-                    self.image_list.extend(image_read)
-                else:
-                    self.image_list.append(image_read)
+#         if len(self.input_param.file_paths.test_data_path) > 0:
+#             for config in self.input_param.file_paths.test_data_path:
+#                 image_read = Config(data_path=config, format=self.input_param.file_paths.format).images
+#                 if isinstance(image_read, list):
+#                     self.image_list.extend(image_read)
+#                 else:
+#                     self.image_list.append(image_read)
 
-        for image in self.image_list:
-            if image.cartesian is False:
-                image._set_cartesian()
-            # image.atom_types_image = np.array([self.atom_types.index(_) for _ in image.atom_types_image])
-        # return image_list
+#         for image in self.image_list:
+#             if image.cartesian is False:
+#                 image._set_cartesian()
+#             # image.atom_types_image = np.array([self.atom_types.index(_) for _ in image.atom_types_image])
+#         # return image_list
 
 class UniDataset(Dataset):
     def __init__(self, 
@@ -117,7 +119,7 @@ class UniDataset(Dataset):
         self.Rc_type = np.array([(_['Rc']) for _ in config["atomType"]])
         self.Rm_type = np.array([(_['Rm']) for _ in config["atomType"]])
         self.Egroup = config['train_egroup']
-        self.use_fractional = True
+        self.calc_max_mn_sign = False
         self.dtype = dtype if isinstance(dtype, torch.dtype) else getattr(torch, dtype)
         self.dirs = data_paths  # include all movement data path
         self.format = format
@@ -149,8 +151,8 @@ class UniDataset(Dataset):
                     self.image_list.append(image_read)
 
         for image in self.image_list:
-            # if image.cartesian is True:
-            #         image._set_fractional()
+            if image.cartesian is False: #统一切换为笛卡尔坐标
+                image._set_cartesian()
             #         image.lattice = image.lattice.flatten()
             # if isinstance(image.atom_type.tolist(), int): # resconstructed the pwdata to ensure the shape of atom_type must be (N, )
             #     image.atom_type = image.atom_type.reshape([1])
@@ -197,8 +199,7 @@ class UniDataset(Dataset):
             cout_type = cout_type[sorted_indices]
             cout_num = np.bincount(atom_types)[cout_type]
             _davg, _dstd = calculate_davg_dstd(self.config, 
-                                                    lattice=image.lattice, 
-                                                    position = image.position, 
+                                                    image, 
                                                     _atom_types = cout_type, 
                                                     input_atom_type = self.atom_types, 
                                                     type_maps = np.array(type_map(atom_types, self.atom_types))
@@ -293,10 +294,10 @@ class UniDataset(Dataset):
     #     return np.array(energy_shift)
 
     def __getitem__(self, index):
-        if self.use_fractional:
-            data = self.__load_data(index)
-        else:
+        if self.calc_max_mn_sign:
             data = self.__load_data_mn(index)
+        else:
+            data = self.__load_data(index)
         # if self.train_hybrid is True:
         #     data = self.__completing_tensor_rows(data)
         return data
@@ -313,8 +314,8 @@ class UniDataset(Dataset):
         data["box_original"] = torch.from_numpy(self.image_list[index].lattice.T.flatten()).to(self.dtype)
         data["num_cell"] = torch.from_numpy(num_cell).to(self.index_type)
         data["volume"] = torch.from_numpy(np.array([volume])).to(self.dtype)
-        if self.image_list[index].cartesian is False:
-            self.image_list[index]._set_cartesian()
+        # if self.image_list[index].cartesian is False: #统一切换为笛卡尔坐标
+        #     self.image_list[index]._set_cartesian()
         data["Position"] = torch.from_numpy(self.image_list[index].position).to(self.dtype)
         data["Lattice"] = torch.from_numpy(self.image_list[index].lattice.flatten()).to(self.dtype)
 
@@ -336,8 +337,8 @@ class UniDataset(Dataset):
         data["Force"] = torch.from_numpy(self.image_list[index].force).to(self.dtype)
         data["Ei"] = torch.from_numpy(self.image_list[index].atomic_energy).to(self.dtype)
         data["Etot"] = torch.from_numpy(np.array([self.image_list[index].Ep])).to(self.dtype)
-        if self.image_list[index].cartesian is True:
-            self.image_list[index]._set_fractional()
+        # if self.image_list[index].cartesian is True: 统一切换为笛卡尔坐标
+        #     self.image_list[index]._set_fractional()
         data["Position"] = torch.from_numpy(self.image_list[index].position).to(self.dtype)
         data["Lattice"] = torch.from_numpy(self.image_list[index].lattice.flatten()).to(self.dtype)
 
@@ -348,18 +349,27 @@ class UniDataset(Dataset):
         data["AtomTypeMap"] = torch.from_numpy(self.image_list[index].atom_type_map).to(self.index_type)
         data["ImageAtomNum"] = torch.from_numpy(np.array([len(data["AtomTypeMap"])])).to(self.index_type)
         list_neigh, dR_neigh, max_ri, Egroup_weight, Divider, Egroup = \
-            find_neighbore(self.image_list[index].atom_type_map, 
-                self.image_list[index].position, 
-                self.image_list[index].lattice, 
-                self.image_list[index].position.shape[0], 
-                self.image_list[index].atomic_energy, 
-                self.img_max_types, 
+            find_neighbore(
+                self.image_list[index].atom_type_map, 
+                np.array(self.image_list[index].lattice).transpose(1, 0).reshape(-1),
+                np.array(self.image_list[index].position).transpose(1, 0).reshape(-1),
                 self.Rc_type, 
                 self.Rm_type, 
-                self.m_neigh, 
                 self.Rc_M, 
-                self.Egroup
+                self.m_neigh 
                 )
+            # find_neighbore(self.image_list[index].atom_type_map, 
+            #     self.image_list[index].position, 
+            #     self.image_list[index].lattice, 
+            #     self.image_list[index].position.shape[0], 
+            #     self.image_list[index].atomic_energy, 
+            #     self.img_max_types, 
+            #     self.Rc_type, 
+            #     self.Rm_type, 
+            #     self.m_neigh, 
+            #     self.Rc_M, 
+            #     self.Egroup
+            #     )
         data["ListNeighbor"] = torch.from_numpy(list_neigh).to(self.dtype)
         data["ImageDR"] = torch.from_numpy(dR_neigh).to(self.dtype)
         data["max_ri"] = max_ri
@@ -412,7 +422,7 @@ class UniDataset(Dataset):
         return volume    
 
 
-def calculate_davg_dstd(config, lattice, position, _atom_types, input_atom_type, type_maps):
+def calculate_davg_dstd(config, image:Image, _atom_types, input_atom_type, type_maps):
     """
     Calculate the average and standard deviation of the pairwise distances between atoms.
     neighconst is a fortran module, which is used to calculate the pairwise distances between atoms.
@@ -438,15 +448,29 @@ def calculate_davg_dstd(config, lattice, position, _atom_types, input_atom_type,
     types, type_incides, atom_types_nums = np.unique(type_maps, return_index=True, return_counts=True)
     atom_types_nums = atom_types_nums[np.argsort(type_incides)]
     Rc_type = np.asfortranarray(np.array([(_['Rc']) for _ in config["atomType"]]))
-    type_maps = np.asfortranarray(type_maps + 1)
-    lattice = np.asfortranarray(lattice.reshape(1, 3, 3))
-    position = np.asfortranarray(position.reshape(1, -1, 3))
-    natoms = position.shape[1]
-    neighconst.find_neighbore(1, lattice, position, ntypes, natoms, m_neigh, Rc_m, Rc_type, type_maps)
-    _list_neigh = neighconst.list_neigh
-    _dR_neigh = neighconst.dr_neigh
-    list_neigh = np.transpose(_list_neigh, (3, 2, 1, 0))
-    dR_neigh = np.transpose(_dR_neigh, (4, 3, 2, 1, 0))
+    # type_maps = np.asfortranarray(type_maps + 1)
+    # lattice = np.asfortranarray(lattice.reshape(1, 3, 3))
+    # position = np.asfortranarray(position.reshape(1, -1, 3))
+    natoms = image.position.shape[0]
+
+    _list_neigh, _dR_neigh = dpcalc.getNeighDP(
+            ntypes,
+            m_neigh,
+            Rc_m,
+            Rc_type,
+            type_maps, #type_maps[0], 
+            list(np.array(image.lattice).transpose(1, 0).reshape(-1)),
+            np.array(image.position).transpose(1, 0).reshape(-1)
+    )
+
+    list_neigh = np.array(_list_neigh).reshape(1, -1 , ntypes, m_neigh)
+    dR_neigh = np.array(_dR_neigh).reshape(1, -1 , ntypes, m_neigh, 3)
+
+    # neighconst.find_neighbore(1, lattice, position, ntypes, natoms, m_neigh, Rc_m, Rc_type, type_maps)
+    # _list_neigh = neighconst.list_neigh
+    # _dR_neigh = neighconst.dr_neigh
+    # list_neigh = np.transpose(_list_neigh, (3, 2, 1, 0))
+    # dR_neigh = np.transpose(_dR_neigh, (4, 3, 2, 1, 0))
     atom_type_list = []
     for atom in list(_atom_types):
         atom_type_list.append(list(input_atom_type).index(atom))
@@ -454,7 +478,7 @@ def calculate_davg_dstd(config, lattice, position, _atom_types, input_atom_type,
     # dR_neigh = dR_neigh[:, :, atom_type_list, :,:]
     # list_neigh = list_neigh[:,:,atom_type_list,:]
     davg, dstd = calc_stat(config, np.copy(dR_neigh[:, :, atom_type_list, :,:]), np.copy(list_neigh[:,:,atom_type_list,:]), m_neigh, natoms, len(atom_type_list), atom_types_nums)
-    neighconst.dealloc()
+    # neighconst.dealloc()
     return davg, dstd
 
 def calc_stat(config, dR_neigh, list_neigh, m_neigh, natoms, ntypes, atom_types_nums):
@@ -630,62 +654,63 @@ def type_map(atom_types_image, atom_type):
     assert len(atom_type_map) != 0, "this atom type didn't found"
     return atom_type_map
 
-def find_neighbore(AtomTypeMap, Position, Lattice, ImageAtomNum, Ei, 
-                   img_max_types, Rc_type, Rm_type, m_neigh, Rc_M, train_egroup):
-    """
-    Call the Fortran subroutine that finds the neighbors for each atom in the system.
+# def find_neighbore(AtomTypeMap, Position, Lattice, ImageAtomNum, Ei, 
+#                    img_max_types, Rc_type, Rm_type, m_neigh, Rc_M, train_egroup, image2=None):
 
-    Args:
-        AtomTypeMap (numpy.ndarray): List of atom types to index.
-        Position (numpy.ndarray): List of atomic positions.
-        Lattice (numpy.ndarray): List of lattice vectors.
-        ImageAtomNum (int): The number of atoms in the system.
-        Ei (numpy.ndarray): List of atomic energies.
-        img_max_types (int): The maximum number of atom types in the system.
-        Rc_type (numpy.ndarray): List of cutoff radii for each atom type.
-        Rm_type (numpy.ndarray): List of minimum cutoff radii for each atom type.
-        m_neigh (int): The maximum number of neighbors for each atom.
-        Rc_M (float): The maximum cutoff radius for the system.
-        train_egroup (bool): Whether to train the energy group.
+def find_neighbore(AtomTypeMap, lattice, position, Rc_type, Rm_type, Rc_M, m_neigh):
+    # AtomTypeMap 元素类型的映射关系，在外部处理好直接传入
 
-    Returns:
-        tuple: A tuple containing list_neigh, ImageDR, and max_ri.
-            - list_neigh (numpy.ndarray): The list of neighbors.
-            - ImageDR (numpy.ndarray): The displacement vectors for each neighbor.
-            - max_ri (float): The maximum value of Ri.
-    """
-    images = 1
-    ntypes = img_max_types
-    natoms = ImageAtomNum
-    Rc_type = np.asfortranarray(Rc_type)
-    type_maps = np.asfortranarray(AtomTypeMap[:natoms] + 1)
-    lattice = np.asfortranarray(Lattice.reshape(-1, 3, 3))
-    position = np.asfortranarray(Position.reshape(1, -1, 3))
+    # images = 1
+    # ntypes = img_max_types
+    # natoms = ImageAtomNum
+    # Rc_type = np.asfortranarray(Rc_type)
+    # type_maps = np.asfortranarray(AtomTypeMap[:natoms] + 1)
+    # lattice = np.asfortranarray(Lattice.reshape(-1, 3, 3))
+    # position = np.asfortranarray(Position.reshape(1, -1, 3))
+    # from src.lib.NeighConst import neighconst
+    # neighconst.find_neighbore(images, lattice, position, ntypes, natoms, 
+    #                             m_neigh, Rc_M, Rc_type, type_maps)
 
-    neighconst.find_neighbore(images, lattice, position, ntypes, natoms, 
-                                m_neigh, Rc_M, Rc_type, type_maps)
-    _list_neigh = neighconst.list_neigh
-    _dR_neigh = neighconst.dr_neigh
-    list_neigh = np.transpose(_list_neigh.copy(), (3, 2, 1, 0)).reshape(images, natoms, ntypes*m_neigh)
-    dR_neigh = np.transpose(_dR_neigh.copy(), (4, 3, 2, 1, 0)).reshape(images, natoms, ntypes*m_neigh, 3)
-    if train_egroup:
-        Ei = np.asfortranarray(Ei[:natoms].reshape(images, natoms))
-        neighconst.calc_egroup(images, lattice, position, natoms, Rc_M, type_maps, Ei)
-        _Egroup_weight = neighconst.fact
-        _Divider = neighconst.divider
-        _Egroup = neighconst.energy_group
-        Egroup_weight = np.transpose(_Egroup_weight.copy(), (2, 1, 0)).squeeze(0)
-        Divider = np.transpose(_Divider.copy(), (1, 0)).squeeze(0)
-        Egroup = np.transpose(_Egroup.copy(), (1, 0)).squeeze(0)
-    else:
-        Egroup_weight = None
-        Divider = None
-        Egroup = None
-    neighconst.dealloc()
+    # lattic is the convert of [xx, xy, xz, yx, yy, yz, zx, zy, zz]
+    # position is the [x1, x2, ..., xn, y1, y2, ..., yn, z1, z2, ..., zn]
+    # list(np.array(image.lattice).transpose(1, 0).reshape(-1)),
+    # np.array(image.position).transpose(1, 0).reshape(-1)
+    ntypes = len(Rc_type)
+    _dp_nl, _dp_r12 = dpcalc.getNeighDP(
+            ntypes,
+            m_neigh,
+            Rc_M,
+            Rc_type,
+            AtomTypeMap, #type_maps[0], 
+            lattice,
+            position
+    )
+    dp_nl = np.array(_dp_nl).reshape(1, -1 , ntypes*m_neigh)
+    dp_r12 = np.array(_dp_r12).reshape(1, -1 , ntypes*m_neigh, 3)
     
-    max_ri, Rij = compute_Ri(list_neigh, dR_neigh, Rc_type, Rm_type)
-    ImageDR = np.concatenate((Rij, dR_neigh), axis=-1)
-    return list_neigh.squeeze(0), ImageDR.squeeze(0), max_ri, Egroup_weight, Divider, Egroup
+    # _list_neigh = neighconst.list_neigh
+    # _dR_neigh = neighconst.dr_neigh
+    # list_neigh = np.transpose(_list_neigh.copy(), (3, 2, 1, 0)).reshape(images, natoms, ntypes*m_neigh)
+    # dR_neigh = np.transpose(_dR_neigh.copy(), (4, 3, 2, 1, 0)).reshape(images, natoms, ntypes*m_neigh, 3)
+    
+    # if train_egroup:
+    #     Ei = np.asfortranarray(Ei[:natoms].reshape(images, natoms))
+    #     neighconst.calc_egroup(images, lattice, position, natoms, Rc_M, type_maps, Ei)
+    #     _Egroup_weight = neighconst.fact
+    #     _Divider = neighconst.divider
+    #     _Egroup = neighconst.energy_group
+    #     Egroup_weight = np.transpose(_Egroup_weight.copy(), (2, 1, 0)).squeeze(0)
+    #     Divider = np.transpose(_Divider.copy(), (1, 0)).squeeze(0)
+    #     Egroup = np.transpose(_Egroup.copy(), (1, 0)).squeeze(0)
+    # else:
+    #     Egroup_weight = None
+    #     Divider = None
+    #     Egroup = None
+    # neighconst.dealloc()
+    
+    max_ri, Rij = compute_Ri(dp_nl, dp_r12, Rc_type, Rm_type)
+    ImageDR = np.concatenate((Rij, dp_r12), axis=-1)
+    return dp_nl.squeeze(0), ImageDR.squeeze(0), max_ri, None, None, None # Egroup_weight, Divider, Egroup
 
 def compute_Ri(list_neigh, dR_neigh, Rc_type, Rm_type):
     """
@@ -758,7 +783,7 @@ def calculate_neighbor_num_max_min(
                 device: torch.device) -> None:
     if dataset.total_images == 0:
         return -1
-    dataset.use_fractional = False
+    dataset.calc_max_mn_sign = True
     dataloader = torch.utils.data.DataLoader(
         dataset,
         batch_size=1024,
@@ -799,7 +824,7 @@ def calculate_neighbor_num_max_min(
         
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-    dataset.use_fractional = True
+    dataset.calc_max_mn_sign = False
     return global_max.max().item()
 
 # def main():

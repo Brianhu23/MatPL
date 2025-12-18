@@ -1,5 +1,4 @@
 import os,sys
-import glob
 import pathlib
 import random
 import numpy as np
@@ -9,7 +8,6 @@ sys.path.append(codepath)
 #for model.mlff 
 sys.path.append(codepath+'/../model')
 
-#for default_para, data_loader_2type dfeat_sparse dp_mlff
 sys.path.append(codepath+'/../pre_data')
 
 #for optimizer
@@ -37,8 +35,6 @@ from src.model.dp_dp_typ_emb import TypeDP
 from src.model.dp_dp import DP
 from src.optimizer.GKF import GKFOptimizer
 from src.optimizer.LKF import LKFOptimizer
-import src.pre_data.dp_mlff as dp_mlff
-# from src.pre_data.dp_data_loader import MovementDataset
 from src.pre_data.dpuni_data_loader import UniDataset, type_map, variable_length_collate_fn, calculate_neighbor_num_max_min
 
 from src.PWMLFF.dp_mods.dp_trainer import train_KF, train, valid, save_checkpoint, predict
@@ -82,23 +78,23 @@ class dp_network:
         self.criterion = nn.MSELoss().to(self.device)
     
     # delete in 2025
-    def generate_data(self):    
-        """
-        Generate training data for MLFF model.
+    # def generate_data(self):    
+    #     """
+    #     Generate training data for MLFF model.
 
-        Returns:
-            list: list of labels path
-        """
-        data_file_config = self.dp_params.get_data_file_dict()
-        raw_data_path = self.dp_params.file_paths.raw_path
-        datasets_path = os.path.join(self.dp_params.file_paths.json_dir, data_file_config["trainSetDir"])
-        train_ratio = data_file_config['ratio']
-        train_data_path = data_file_config["trainDataPath"]
-        valid_data_path = data_file_config["validDataPath"]
-        labels_path = dp_mlff.gen_train_data(train_ratio, raw_data_path, datasets_path, 
-                               train_data_path, valid_data_path, 
-                               self.dp_params.valid_shuffle, self.dp_params.seed, self.dp_params.format)
-        return labels_path
+    #     Returns:
+    #         list: list of labels path
+    #     """
+    #     data_file_config = self.dp_params.get_data_file_dict()
+    #     raw_data_path = self.dp_params.file_paths.raw_path
+    #     datasets_path = os.path.join(self.dp_params.file_paths.json_dir, data_file_config["trainSetDir"])
+    #     train_ratio = data_file_config['ratio']
+    #     train_data_path = data_file_config["trainDataPath"]
+    #     valid_data_path = data_file_config["validDataPath"]
+    #     labels_path = dp_mlff.gen_train_data(train_ratio, raw_data_path, datasets_path, 
+    #                            train_data_path, valid_data_path, 
+    #                            self.dp_params.valid_shuffle, self.dp_params.seed, self.dp_params.format)
+    #     return labels_path
 
     def load_davg_from_ckpt(self):
         if self.dp_params.inference:

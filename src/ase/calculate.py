@@ -67,7 +67,7 @@ class MatPL_calculator(Calculator):
         # dp
         if self.model_type == "DP":
             Etot, Ei, Force, Virial = self.calc.ase_dp_infer(lattice = np.array(atoms.cell),
-                        frac_postions = atoms.get_scaled_positions(),
+                        cart_postions = atoms.get_positions(),
                         symbols = self.atoms.get_chemical_symbols()
                         )
         if self.model_type == "NEP":

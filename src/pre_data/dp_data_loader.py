@@ -4,7 +4,6 @@ import glob
 from torch.utils.data import Dataset
 import torch
 import yaml
-from NeighConst import neighconst
 
 class MovementDataset(Dataset):
     def __init__(self, data_paths, config, davg, dstd, energy_shift, max_atom_nums):
@@ -204,6 +203,8 @@ def find_neighbore(AtomTypeMap, Position, Lattice, ImageAtomNum, Ei,
             - ImageDR (numpy.ndarray): The displacement vectors for each neighbor.
             - max_ri (float): The maximum value of Ri.
     """
+    from NeighConst import neighconst
+
     images = 1
     ntypes = img_max_types
     natoms = ImageAtomNum

@@ -2,11 +2,9 @@ import os
 import json
 import torch
 from src.user.input_param import InputParam
-from src.PWMLFF.dp_param_extract import extract_force_field
 from src.PWMLFF.dp_network import dp_network
 from utils.file_operation import delete_tree, copy_tree, copy_file
 from utils.json_operation import get_parameter, get_required_parameter
-from src.pre_data.find_maxneighbor import get_max_neighbor
 
 '''
 description: do dp training

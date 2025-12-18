@@ -13,7 +13,7 @@ endif()
 find_package(pybind11 CONFIG REQUIRED)
 
 # Create the pybind11 module
-pybind11_add_module(findneigh src/pynep.cpp src/nep.cpp)
+pybind11_add_module(findneigh src/pynep.cpp src/nep.cpp src/dp.cpp)
 
 # Set the target properties to rename the output file
 set_target_properties(findneigh PROPERTIES OUTPUT_NAME "findneigh")
