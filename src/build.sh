@@ -5,6 +5,14 @@ MAKE_CMD="make"
 NEP_TYPES=20
 COMPILE_FORTRAN=0
 
+# Define directory variables
+BASE_DIR=$(pwd)  # src directory
+BIN_DIR="$BASE_DIR/bin"
+LIB_DIR="$BASE_DIR/lib"
+NEP_CPU_DIR="$BASE_DIR/feature/nep_find_neigh"
+NEP_GPU_DIR="$BASE_DIR/NEP_GPU"
+OP_DIR="$BASE_DIR/op"
+
 # Function to display help information
 show_help() {
     echo "Usage: $0 [OPTIONS]"
@@ -67,8 +75,8 @@ echo "Using NEP_TYPES = $NEP_TYPES"
 echo "Using MAKE_CMD = $MAKE_CMD"
 echo "Compile Fortran codes: $([ $COMPILE_FORTRAN -eq 1 ] && echo "Yes" || echo "No")"
 
-mkdir -p bin
-mkdir -p lib
+mkdir -p "$BIN_DIR"
+mkdir -p "$LIB_DIR"
 
 # Compile Fortran codes if requested
 if [[ $COMPILE_FORTRAN -eq 1 ]]; then
@@ -91,7 +99,7 @@ if [[ $COMPILE_FORTRAN -eq 1 ]]; then
     MISSING_BIN_FILES=()
     
     for file in "${REQUIRED_BIN_FILES[@]}"; do
-        if [[ ! -f "bin/$file" ]]; then
+        if [[ ! -f "$BIN_DIR/$file" ]]; then
             MISSING_BIN_FILES+=("$file")
         fi
     done
@@ -101,8 +109,8 @@ if [[ $COMPILE_FORTRAN -eq 1 ]]; then
         exit 1
     fi
     
-    if [[ ! -f "lib/NeighConst.so" ]]; then
-        echo "Error: lib/NeighConst.so not found (Fortran compilation product)"
+    if [[ ! -f "$LIB_DIR/NeighConst.so" ]]; then
+        echo "Error: $LIB_DIR/NeighConst.so not found (Fortran compilation product)"
         exit 1
     fi
     
@@ -113,47 +121,65 @@ fi
 
 # make nep-cpu interface
 echo "Building NEP-CPU interface..."
-cd feature/nep_find_neigh
-rm -rf build/*
-rm -f findneigh.so 2>/dev/null
-mkdir -p build
-cd build
-if cmake -Dpybind11_DIR=$(python -m pybind11 --cmakedir) .. && $MAKE_CMD; then
-    cp findneigh.* ../findneigh.so 2>/dev/null
+if [[ -d "$NEP_CPU_DIR" ]]; then
+    cd "$NEP_CPU_DIR"
+    rm -rf build/*
+    rm -f findneigh.so 2>/dev/null
+    mkdir -p build
+    cd build
+    if cmake -Dpybind11_DIR=$(python -m pybind11 --cmakedir) .. && $MAKE_CMD; then
+        cp findneigh.* ../findneigh.so 2>/dev/null
+    else
+        echo "Warning: Failed to build NEP-CPU interface"
+    fi
+    cd "$BASE_DIR"  # Return to base directory
 else
-    echo "Warning: Failed to build NEP-CPU interface"
+    echo "Warning: NEP-CPU directory not found: $NEP_CPU_DIR"
 fi
-cd ../../
 
 # make nep-gpu interface
 echo "Building NEP-GPU interface..."
-mkdir -p NEP_GPU/build
-cd NEP_GPU/build
-if cmake -Dpybind11_DIR=$(python -m pybind11 --cmakedir) .. && $MAKE_CMD; then
-    cp nep3_module*.so nep_gpu.so 2>/dev/null
+
+# Check if CUDA is available
+if command -v nvcc >/dev/null 2>&1 || [[ -n "$CUDA_HOME" ]] || [[ -n "$CUDA_PATH" ]]; then
+    if [[ -d "$NEP_GPU_DIR" ]]; then
+        mkdir -p "$NEP_GPU_DIR/build"
+        cd "$NEP_GPU_DIR/build"
+        if cmake -Dpybind11_DIR=$(python -m pybind11 --cmakedir) .. && $MAKE_CMD; then
+            cp nep3_module*.so nep_gpu.so 2>/dev/null
+        else
+            echo "Warning: Failed to build NEP-GPU interface"
+        fi
+        cd "$BASE_DIR"  # Return to base directory
+    else
+        echo "Warning: NEP-GPU directory not found: $NEP_GPU_DIR"
+    fi
 else
-    echo "Warning: Failed to build NEP-GPU interface"
+    echo "Warning: CUDA not detected, skipping NEP-GPU compilation"
+    echo "         To compile with GPU support, please install CUDA toolkit"
 fi
-cd ../../../
 
 # Build operators
 echo "Building operators..."
-cd op
-rm -rf build
-mkdir -p build
-cd build
-# for bigmodel the types should be 100
-if cmake -DNEP_TYPES=$NEP_TYPES .. && $MAKE_CMD; then
-    echo "Operators built successfully"
+if [[ -d "$OP_DIR" ]]; then
+    cd "$OP_DIR"
+    rm -rf build
+    mkdir -p build
+    cd build
+    # for bigmodel the types should be 100
+    if cmake -DNEP_TYPES=$NEP_TYPES .. && $MAKE_CMD; then
+        echo "Operators built successfully"
+    else
+        echo "Warning: Failed to build operators"
+    fi
+    cd "$BASE_DIR"  # Return to base directory
 else
-    echo "Warning: Failed to build operators"
+    echo "Warning: Operators directory not found: $OP_DIR"
 fi
-cd ..
-cd ..
 
 # Create symbolic links in bin directory
 echo "Creating symbolic links in bin directory..."
-cd bin
+cd "$BIN_DIR"
 
 # Create symbolic link for MD executable only if it exists
 if [[ -f "../md/fortran_code/main_MD.x" ]]; then
@@ -174,16 +200,16 @@ ln -sf ../../main.py ./PWMLFF
 ln -sf ../../main.py ./pwmlff
 # ln -sf ../../main_mnode.py ./MNEP
 
-cd ..            # back to src dir
+cd "$BASE_DIR"  # Return to base directory
 
-current_path=$(pwd)
-parent_path=$(dirname "$current_path")
+# Get parent directory of BASE_DIR (project root)
+PARENT_DIR=$(dirname "$BASE_DIR")
 
 # write environment to env.sh
-cat <<EOF > ../env.sh
+cat <<EOF > "$PARENT_DIR/env.sh"
 # Environment for MatPL
-export PYTHONPATH=$parent_path:\$PYTHONPATH
-export PATH=$current_path/bin:\$PATH
+export PYTHONPATH=$PARENT_DIR:\$PYTHONPATH
+export PATH=$BIN_DIR:\$PATH
 EOF
 
 echo ""
@@ -200,9 +226,9 @@ echo "MatPL has been successfully installed."
 echo "Please load the MatPL environment variables before use."
 echo ""
 echo "Recommended method:"
-echo "  source $parent_path/env.sh"
+echo "  source $PARENT_DIR/env.sh"
 echo ""
 echo "Or manually set environment variables:"
-echo "  export PYTHONPATH=$parent_path:\$PYTHONPATH"
-echo "  export PATH=$current_path/bin:\$PATH"
+echo "  export PYTHONPATH=$PARENT_DIR:\$PYTHONPATH"
+echo "  export PATH=$BIN_DIR:\$PATH"
 echo "=================================="

@@ -28,20 +28,69 @@ file(MAKE_DIRECTORY ${CMAKE_LIBRARY_OUTPUT_DIRECTORY})
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/obj)
 file(MAKE_DIRECTORY ${CMAKE_ARCHIVE_OUTPUT_DIRECTORY})
 
-# 4. Detect if CUDA is available
+# 4. Check CUDA availability - both pytorch support and system toolkit
+# 4.1 Check if PyTorch has CUDA support
 execute_process(
-    COMMAND python3 -c "import torch; print(torch.version.cuda is not None)"
-    OUTPUT_VARIABLE HAS_CUDA_SUPPORT
+    COMMAND python3 -c "import torch; print(torch.cuda.is_available())"
+    OUTPUT_VARIABLE PYTORCH_HAS_CUDA
     OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
-# 5. Always add CPU subdirectory
+# 4.2 Check if CUDA toolkit is installed on the system
+find_program(NVCC nvcc)
+if(NVCC)
+    set(SYSTEM_HAS_CUDA TRUE)
+    # Extract CUDA version
+    execute_process(
+        COMMAND ${NVCC} --version
+        OUTPUT_VARIABLE NVCC_VERSION_OUTPUT
+    )
+    # Parse version
+    string(REGEX MATCH "V[0-9]+\\.[0-9]+\\.[0-9]+" CUDA_VERSION ${NVCC_VERSION_OUTPUT})
+    string(REPLACE "V" "" CUDA_VERSION ${CUDA_VERSION})
+    message(STATUS "Found CUDA toolkit version: ${CUDA_VERSION}")
+else()
+    set(SYSTEM_HAS_CUDA FALSE)
+    message(STATUS "CUDA toolkit (nvcc) not found in system PATH")
+endif()
+
+# 4.3 Check CUDA_HOME or CUDA_PATH environment variables as fallback
+if(NOT SYSTEM_HAS_CUDA)
+    if(DEFINED ENV{CUDA_HOME} AND EXISTS $ENV{CUDA_HOME})
+        set(SYSTEM_HAS_CUDA TRUE)
+        message(STATUS "Found CUDA_HOME: $ENV{CUDA_HOME}")
+    elseif(DEFINED ENV{CUDA_PATH} AND EXISTS $ENV{CUDA_PATH})
+        set(SYSTEM_HAS_CUDA TRUE)
+        message(STATUS "Found CUDA_PATH: $ENV{CUDA_PATH}")
+    endif()
+endif()
+
+# 5. Determine if GPU compilation should proceed
+if(PYTORCH_HAS_CUDA AND SYSTEM_HAS_CUDA)
+    set(COMPILE_GPU TRUE)
+    message(STATUS "PyTorch has CUDA support AND CUDA toolkit is available. Enabling GPU compilation.")
+elseif(PYTORCH_HAS_CUDA AND NOT SYSTEM_HAS_CUDA)
+    set(COMPILE_GPU FALSE)
+    message(WARNING "PyTorch was built with CUDA support but CUDA toolkit is not available.")
+    message(WARNING "Please install CUDA toolkit or set CUDA_HOME/CUDA_PATH environment variable.")
+    message(WARNING "Skipping GPU compilation. Only CPU operators will be built.")
+elseif(NOT PYTORCH_HAS_CUDA AND SYSTEM_HAS_CUDA)
+    set(COMPILE_GPU FALSE)
+    message(WARNING "CUDA toolkit is available but PyTorch was not built with CUDA support.")
+    message(WARNING "Please install PyTorch with CUDA support: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cuXXX")
+    message(WARNING "Skipping GPU compilation. Only CPU operators will be built.")
+else()
+    set(COMPILE_GPU FALSE)
+    message(STATUS "No CUDA support detected. Building only CPU operators.")
+endif()
+
+# 6. Always add CPU subdirectory
 add_subdirectory(cmake/cpu)
 
-# 6. Conditionally add GPU subdirectory
-if(HAS_CUDA_SUPPORT)
-    message(STATUS "CUDA is available. Adding GPU subdirectory.")
+# 7. Conditionally add GPU subdirectory
+if(COMPILE_GPU)
+    message(STATUS "Adding GPU subdirectory for CUDA compilation.")
     add_subdirectory(cmake/gpu)
 else()
-    message(STATUS "CUDA is not available. Skipping GPU subdirectory.")
+    message(STATUS "Skipping GPU subdirectory.")
 endif()
