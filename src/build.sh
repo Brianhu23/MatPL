@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # Default make command (single core) and NEP types
 MAKE_CMD="make"
@@ -31,7 +31,7 @@ show_help() {
 }
 
 # Parse command line arguments
-while [[ $# -gt 0 ]]; do
+while [ $# -gt 0 ]; do
     case $1 in
         -h)
             show_help
@@ -42,21 +42,24 @@ while [[ $# -gt 0 ]]; do
             ;;
         -n*)
             # Extract number after -n
-            NEP_TYPES="${1#-n}"
+            NEP_TYPES=$(echo "$1" | cut -c3-)
             # If no number, check if next argument is numeric
-            if [[ -z "$NEP_TYPES" ]]; then
-                if [[ "$2" =~ ^[0-9]+$ ]]; then
-                    NEP_TYPES="$2"
-                    shift
-                else
-                    echo "Error: -n requires a numeric argument"
-                    exit 1
-                fi
+            if [ -z "$NEP_TYPES" ]; then
+                case $2 in
+                    [0-9]*)
+                        NEP_TYPES="$2"
+                        shift
+                        ;;
+                    *)
+                        echo "Error: -n requires a numeric argument"
+                        exit 1
+                        ;;
+                esac
             fi
             shift
             ;;
         -m)
-            if [[ "$2" == "nn" ]]; then
+            if [ "$2" = "nn" ]; then
                 COMPILE_FORTRAN=1
                 shift 2
             else
@@ -73,19 +76,21 @@ done
 
 echo "Using NEP_TYPES = $NEP_TYPES"
 echo "Using MAKE_CMD = $MAKE_CMD"
-echo "Compile Fortran codes: $([ $COMPILE_FORTRAN -eq 1 ] && echo "Yes" || echo "No")"
+if [ $COMPILE_FORTRAN -eq 1 ]; then
+    echo "Compile Fortran codes: Yes"
+else
+    echo "Compile Fortran codes: No"
+fi
 
 mkdir -p "$BIN_DIR"
 mkdir -p "$LIB_DIR"
 
 # Compile Fortran codes if requested
-if [[ $COMPILE_FORTRAN -eq 1 ]]; then
+if [ $COMPILE_FORTRAN -eq 1 ]; then
     echo "Compiling Fortran codes..."
     
     # List of directories containing Fortran code
-    FORTRAN_DIRS=("pre_data/gen_feature" "pre_data/fit" "pre_data/fortran_code" "md/fortran_code")
-    
-    for dir in "${FORTRAN_DIRS[@]}"; do
+    for dir in "pre_data/gen_feature" "pre_data/fit" "pre_data/fortran_code" "md/fortran_code"; do
         echo "Compiling in $dir..."
         if ! make -C "$dir"; then
             echo "Error: Compilation failed in $dir"
@@ -95,21 +100,20 @@ if [[ $COMPILE_FORTRAN -eq 1 ]]; then
     done
     
     # Check for required Fortran compiled files
-    REQUIRED_BIN_FILES=("main_MD.x" "gen_dR.x")
-    MISSING_BIN_FILES=()
+    missing_files=""
     
-    for file in "${REQUIRED_BIN_FILES[@]}"; do
-        if [[ ! -f "$BIN_DIR/$file" ]]; then
-            MISSING_BIN_FILES+=("$file")
+    for file in "main_MD.x" "gen_dR.x"; do
+        if [ ! -f "$BIN_DIR/$file" ]; then
+            missing_files="$missing_files $file"
         fi
     done
     
-    if [[ ${#MISSING_BIN_FILES[@]} -gt 0 ]]; then
-        echo "Error: Missing required Fortran compiled files: ${MISSING_BIN_FILES[*]}"
+    if [ -n "$missing_files" ]; then
+        echo "Error: Missing required Fortran compiled files:$missing_files"
         exit 1
     fi
     
-    if [[ ! -f "$LIB_DIR/NeighConst.so" ]]; then
+    if [ ! -f "$LIB_DIR/NeighConst.so" ]; then
         echo "Error: $LIB_DIR/NeighConst.so not found (Fortran compilation product)"
         exit 1
     fi
@@ -121,7 +125,7 @@ fi
 
 # make nep-cpu interface
 echo "Building NEP-CPU interface..."
-if [[ -d "$NEP_CPU_DIR" ]]; then
+if [ -d "$NEP_CPU_DIR" ]; then
     cd "$NEP_CPU_DIR"
     rm -rf build/*
     rm -f findneigh.so 2>/dev/null
@@ -141,8 +145,8 @@ fi
 echo "Building NEP-GPU interface..."
 
 # Check if CUDA is available
-if command -v nvcc >/dev/null 2>&1 || [[ -n "$CUDA_HOME" ]] || [[ -n "$CUDA_PATH" ]]; then
-    if [[ -d "$NEP_GPU_DIR" ]]; then
+if command -v nvcc >/dev/null 2>&1 || [ -n "$CUDA_HOME" ] || [ -n "$CUDA_PATH" ]; then
+    if [ -d "$NEP_GPU_DIR" ]; then
         mkdir -p "$NEP_GPU_DIR/build"
         cd "$NEP_GPU_DIR/build"
         if cmake -Dpybind11_DIR=$(python -m pybind11 --cmakedir) .. && $MAKE_CMD; then
@@ -161,7 +165,7 @@ fi
 
 # Build operators
 echo "Building operators..."
-if [[ -d "$OP_DIR" ]]; then
+if [ -d "$OP_DIR" ]; then
     cd "$OP_DIR"
     rm -rf build
     mkdir -p build
@@ -182,10 +186,10 @@ echo "Creating symbolic links in bin directory..."
 cd "$BIN_DIR"
 
 # Create symbolic link for MD executable only if it exists
-if [[ -f "../md/fortran_code/main_MD.x" ]]; then
+if [ -f "../md/fortran_code/main_MD.x" ]; then
     ln -sf ../md/fortran_code/main_MD.x .
     echo "Created symbolic link for main_MD.x"
-elif [[ $COMPILE_FORTRAN -eq 1 ]]; then
+elif [ $COMPILE_FORTRAN -eq 1 ]; then
     echo "Error: main_MD.x should have been created by Fortran compilation but was not found"
     exit 1
 else
@@ -214,7 +218,7 @@ EOF
 
 echo ""
 echo "================================="
-if [[ $COMPILE_FORTRAN -eq 0 ]]; then
+if [ $COMPILE_FORTRAN -eq 0 ]; then
     echo "WARNING: Fortran codes were not compiled."
     echo "NN and Linear models will not be available."
     echo "To enable these models, recompile with the '-m nn' option:"
@@ -231,4 +235,4 @@ echo ""
 echo "Or manually set environment variables:"
 echo "  export PYTHONPATH=$PARENT_DIR:\$PYTHONPATH"
 echo "  export PATH=$BIN_DIR:\$PATH"
-echo "=================================="
+echo "================================="
