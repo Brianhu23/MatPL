@@ -319,49 +319,42 @@ fi
 echo "----------------------------------------"
 # 7. Check lammps-fortran related files and directories
 echo "7. Checking lammps-fortran related files and directories..."
-# 检查离线包中是否存在 lammps-fortran 目录
-lmp_fortran_dir_A="$A_ROOT/src/lmps/lammps-fortran"
-if [ ! -d "$lmp_fortran_dir_A" ]; then
-    echo " lammps-fortran directory not found in patch, setting lmpfortran_change=0"
-    lmpfortran_change=0
-else
-    lmp_fortran_matpl_dir_A="$A_ROOT/src/lmps/lammps-fortran/MATPL"
-    lmp_fortran_matpl_dir_B="$B_ROOT/src/lmps/lammps-fortran/MATPL"
-    lmp_fortran_makefile_A="$A_ROOT/src/lmps/lammps-fortran/Makefile.mpi"
-    lmp_fortran_makefile_B="$B_ROOT/src/lmps/lammps-fortran/Makefile.mpi"
-    
-    # Check MATPL directory
-    if [ -d "$lmp_fortran_matpl_dir_A" ] && [ -d "$lmp_fortran_matpl_dir_B" ]; then
-        if ! diff -rq "$lmp_fortran_matpl_dir_A" "$lmp_fortran_matpl_dir_B" > /dev/null 2>&1; then
-            lmpfortran_change=1
-            echo " Changes detected in MATPL directory"
-        fi
-    elif [ ! -d "$lmp_fortran_matpl_dir_A" ] && [ -d "$lmp_fortran_matpl_dir_B" ]; then
+lmp_fortran_matpl_dir_A="$A_ROOT/src/lmps/lammps-fortran/MATPL"
+lmp_fortran_matpl_dir_B="$B_ROOT/src/lmps/lammps-fortran/MATPL"
+lmp_fortran_makefile_A="$A_ROOT/src/lmps/lammps-fortran/Makefile.mpi"
+lmp_fortran_makefile_B="$B_ROOT/src/lmps/lammps-fortran/Makefile.mpi"
+# Check MATPL directory
+if [ -d "$lmp_fortran_matpl_dir_A" ] && [ -d "$lmp_fortran_matpl_dir_B" ]; then
+    if ! diff -rq "$lmp_fortran_matpl_dir_A" "$lmp_fortran_matpl_dir_B" > /dev/null 2>&1; then
         lmpfortran_change=1
-        echo " MATPL directory deleted"
-    elif [ -d "$lmp_fortran_matpl_dir_A" ] && [ ! -d "$lmp_fortran_matpl_dir_B" ]; then
-        lmpfortran_change=1
-        echo " MATPL directory added"
+        echo " Changes detected in MATPL directory"
     fi
-    # Check Makefile.mpi file
-    if [ -f "$lmp_fortran_makefile_A" ] && [ -f "$lmp_fortran_makefile_B" ]; then
-        if ! diff -q "$lmp_fortran_makefile_A" "$lmp_fortran_makefile_B" > /dev/null 2>&1; then
-            lmpfortran_change=1
-            echo " Changes detected in Makefile.mpi file"
-        fi
-    elif [ ! -f "$lmp_fortran_makefile_A" ] && [ -f "$lmp_fortran_makefile_B" ]; then
+elif [ ! -d "$lmp_fortran_matpl_dir_A" ] && [ -d "$lmp_fortran_matpl_dir_B" ]; then
+    lmpfortran_change=1
+    echo " MATPL directory deleted"
+elif [ -d "$lmp_fortran_matpl_dir_A" ] && [ ! -d "$lmp_fortran_matpl_dir_B" ]; then
+    lmpfortran_change=1
+    echo " MATPL directory added"
+fi
+# Check Makefile.mpi file
+if [ -f "$lmp_fortran_makefile_A" ] && [ -f "$lmp_fortran_makefile_B" ]; then
+    if ! diff -q "$lmp_fortran_makefile_A" "$lmp_fortran_makefile_B" > /dev/null 2>&1; then
         lmpfortran_change=1
-        echo " Makefile.mpi file deleted"
-    elif [ -f "$lmp_fortran_makefile_A" ] && [ ! -f "$lmp_fortran_makefile_B" ]; then
-        lmpfortran_change=1
-        echo " Makefile.mpi file added"
+        echo " Changes detected in Makefile.mpi file"
     fi
-    if [ $lmpfortran_change -eq 0 ]; then
-        echo " No changes in lammps-fortran related files"
-    fi
+elif [ ! -f "$lmp_fortran_makefile_A" ] && [ -f "$lmp_fortran_makefile_B" ]; then
+    lmpfortran_change=1
+    echo " Makefile.mpi file deleted"
+elif [ -f "$lmp_fortran_makefile_A" ] && [ ! -f "$lmp_fortran_makefile_B" ]; then
+    lmpfortran_change=1
+    echo " Makefile.mpi file added"
+fi
+if [ $lmpfortran_change -eq 0 ]; then
+    echo " No changes in lammps-fortran related files"
 fi
 echo "----------------------------------------"
 
 # 计算组合状态码 (每个标志占一位)
 exit_code=$((py_change * 1 + nep_cpu_change * 2 + nep_change * 4 + op_change * 8 + fortran_change * 16 + lmp_change * 32 + lmpfortran_change * 64))
 exit $exit_code
+

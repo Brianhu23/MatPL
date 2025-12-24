@@ -19,6 +19,8 @@ else
 fi
 
 source $ENV_DIR/bin/activate
+echo "ENV_DIR/bin/activate path for lammps-fortran is: $ENV_DIR/bin/activate"
+
 LAMMPS_FORTRAN=$BASE_DIR/lammps-fortran
 
 echo "patch file dir is $PATCH_DIR"

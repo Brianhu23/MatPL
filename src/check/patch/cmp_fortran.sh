@@ -1,50 +1,63 @@
 #!/bin/bash
 
-# Default make command (single core) and NEP types
+# Default make command (single core)
 MAKE_CMD="make"
-NEP_TYPES=20  # 默认值
 
 PATCH_DIR=$(pwd)
-BASE_DIR=$1
-VERSION=$2
-MATPL_DIR=${BASE_DIR}/$3
-CLEAN_ALL=$4
-CPU_ONLY=$5
-if [ $CPU_ONLY -eq 0 ]; then
-  ENV_DIR=${BASE_DIR}/matpl-${VERSION}
+BASE_DIR="$1"
+VERSION="$2"
+MATPL_DIR="${BASE_DIR}/$3"
+CLEAN_ALL="$4"
+CPU_ONLY="$5"
+
+# 设置环境目录
+if [ "$CPU_ONLY" = "0" ]; then
+  ENV_DIR="${BASE_DIR}/matpl-${VERSION}"
 else
-  ENV_DIR=${BASE_DIR}/matpl_cpu-${VERSION}
+  ENV_DIR="${BASE_DIR}/matpl_cpu-${VERSION}"
 fi
+
 echo "patch file dir is $PATCH_DIR"
 echo "MatPL root dir is $BASE_DIR"
 echo "ENV   root dir is $ENV_DIR"
-#ls $BASE_DIR
 
-source $ENV_DIR/bin/activate
-cd $MATPL_DIR/src
+# 激活虚拟环境
+if [ -f "$ENV_DIR/bin/activate" ]; then
+  . "$ENV_DIR/bin/activate"
+  echo "Virtual environment activated"
+else
+  echo "Warning: Virtual environment not found at $ENV_DIR/bin/activate"
+fi
 
-ls $MATPL_DIR/src
+# 进入MatPL源码目录
+if [ ! -d "$MATPL_DIR/src" ]; then
+  echo "Error: Directory $MATPL_DIR/src does not exist"
+  exit 1
+fi
+
+cd "$MATPL_DIR/src" || {
+  echo "Error: Cannot change to directory $MATPL_DIR/src"
+  exit 1
+}
+
+echo "Current directory: $(pwd)"
+ls -la
+
+# 保存前5个参数，然后处理剩余的选项参数
+ARG1="$1"
+ARG2="$2"
+ARG3="$3"
+ARG4="$4"
+ARG5="$5"
+
+# 移除前5个位置参数，处理剩余的参数
+shift 5
 
 # Parse command line arguments
-while [[ $# -gt 0 ]]; do
-    case $1 in
+while [ $# -gt 0 ]; do
+    case "$1" in
         -j*)
             MAKE_CMD="make $1"
-            shift
-            ;;
-        -n*)
-            # 提取 -n 后面的数字
-            NEP_TYPES="${1#-n}"
-            # 如果没有数字，则检查下一个参数是否为数字
-            if [[ -z "$NEP_TYPES" ]]; then
-                if [[ "$2" =~ ^[0-9]+$ ]]; then
-                    NEP_TYPES="$2"
-                    shift
-                else
-                    echo "Error: -n requires a numeric argument"
-                    exit 1
-                fi
-            fi
             shift
             ;;
         *)
@@ -54,48 +67,62 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo "Using NEP_TYPES = $NEP_TYPES"
 echo "Using MAKE_CMD = $MAKE_CMD"
 
+# 创建必要的目录
 mkdir -p bin
 mkdir -p lib
 
-$MAKE_CMD -C pre_data/gen_feature
-$MAKE_CMD -C pre_data/fit
-$MAKE_CMD -C pre_data/fortran_code  # spack load gcc@7.5.0
-$MAKE_CMD -C md/fortran_code
+# 编译Fortran代码
+echo "Compiling Fortran codes..."
 
-cd bin
+# 编译各个目录
+for dir in pre_data/gen_feature pre_data/fit pre_data/fortran_code md/fortran_code; do
+  if [ -d "$dir" ]; then
+    echo "Compiling in $dir..."
+    if ! $MAKE_CMD -C "$dir"; then
+      echo "Error: Compilation failed in $dir"
+      exit 1
+    fi
+  else
+    echo "Warning: Directory $dir not found"
+  fi
+done
 
-#ln -s ../pre_data/mlff.py .
-#ln -s ../pre_data/seper.py .
-#ln -s ../pre_data/gen_data.py .
-#ln -s ../pre_data/data_loader_2type.py .
-#ln -s ../../utils/read_torch_wij.py . 
-#ln -s ../../utils/plot_nn_test.py . 
-#ln -s ../../utils/plot_mlff_inference.py .
-#ln -s ../../utils/read_torch_wij_dp.py . 
-ln -s ../md/fortran_code/main_MD.x .
+# 进入bin目录
+cd bin || {
+  echo "Error: Cannot change to bin directory"
+  exit 1
+}
 
-ln -s ../../main.py ./MATPL
-ln -s ../../main.py ./matpl
-ln -s ../../main.py ./MatPL
-ln -s ../../main.py ./PWMLFF
-ln -s ../../main.py ./pwmlff
-#ln -s ../../main_mnode.py ./MNEP
+# 创建符号链接
+echo "Creating symbolic links..."
 
-#chmod +x ./mlff.py
-#chmod +x ./seper.py
-#chmod +x ./gen_data.py
-#chmod +x ./data_loader_2type.py
-#chmod +x ./train.py
-#chmod +x ./test.py
-#chmod +x ./predict.py
-#chmod +x ./read_torch_wij.py
-#chmod +x ./read_torch_wij_dp.py
-#chmod +x ./plot_nn_test.py
-#chmod +x ./plot_mlff_inference.py 
+# 检查main_MD.x是否存在
+if [ -f "../md/fortran_code/main_MD.x" ]; then
+  ln -sf ../md/fortran_code/main_MD.x .
+  echo "Created link for main_MD.x"
+else
+  echo "Warning: main_MD.x not found at ../md/fortran_code/main_MD.x"
+fi
 
+# 创建主程序链接
+if [ -f "../../main.py" ]; then
+  ln -sf ../../main.py ./MATPL
+  ln -sf ../../main.py ./matpl
+  ln -sf ../../main.py ./MatPL
+  ln -sf ../../main.py ./PWMLFF
+  ln -sf ../../main.py ./pwmlff
+  echo "Created main program links"
+else
+  echo "Warning: ../../main.py not found"
+fi
 
-echo "fortran compilation successful!"
-cd $PATCH_DIR
+# 返回原始目录
+cd "$PATCH_DIR" || {
+  echo "Error: Cannot return to patch directory $PATCH_DIR"
+  exit 1
+}
+
+echo "Fortran compilation successful!"
+echo "All tasks completed!"

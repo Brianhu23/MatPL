@@ -1,11 +1,201 @@
 #!/bin/bash
 
-# 默认使用单核编译
+# Default to single-core compilation
 JOB_COUNT=1
-NEP_TYPES=""  # 初始化为空
+NEP_TYPES=""  # Initialize as empty
+UNPACK_ONLY=false
+COMPILE_FORTRAN=false  # 新增：是否编译 Fortran 版本
 
-# 解析命令行参数
-while getopts "j:n:" opt; do
+# Display help information
+show_help() {
+  echo "Usage: $0 [OPTIONS]"
+  echo ""
+  echo "Options:"
+  echo "  -j N     Set the number of CPU cores for compilation (default: 1)"
+  echo "  -n TYPE  Set NEP_TYPES value for compilation (default: 20)"
+  echo "  -m nn    Compile LAMMPS Fortran version (for Linear and NN models)"
+  echo "  -u       Unpack the archive only, skip compilation"
+  echo "  -h, --help  Display this help message"
+  exit 0
+}
+
+# Environment check functions
+check_ifort_mkl() {
+    echo "=== Checking ifort compiler and MKL library ==="
+    
+    if command -v ifort &> /dev/null; then
+        ifort_version=$(ifort --version | grep "ifort" | awk '{print $3}' | cut -d'.' -f1-2)
+        major_version=$(echo $ifort_version | cut -d'.' -f1)
+        minor_version=$(echo $ifort_version | cut -d'.' -f2)
+        
+        if [ "$major_version" -gt 19 ] || ([ "$major_version" -eq 19 ] && [ "$minor_version" -ge 1 ]); then
+            echo "✓ ifort version: $ifort_version (>= 19.1)"
+            return 0
+        else
+            echo "✗ ifort version: $ifort_version (< 19.1)"
+            return 1
+        fi
+    else
+        echo "✗ ifort compiler not found"
+        return 1
+    fi
+}
+
+check_mkl() {
+    # 检查 MKL 库是否存在
+    if [ -d "/opt/intel/mkl" ] || [ -d "$MKLROOT" ] || [ ! -z "$MKLROOT" ]; then
+        echo "✓ MKL library is installed"
+        return 0
+    else
+        echo "✗ MKL library is not installed"
+        return 1
+    fi
+}
+
+check_gcc_version() {
+    echo "=== Checking GCC version ==="
+    
+    if command -v gcc &> /dev/null; then
+        gcc_version=$(gcc -dumpversion | cut -d. -f1)
+        if [ "$gcc_version" -ge 8 ]; then
+            echo "✓ GCC version: $(gcc -dumpversion) (>= 8.0)"
+            return 0
+        else
+            echo "✗ GCC version: $(gcc -dumpversion) (< 8.0)"
+            return 1
+        fi
+    else
+        echo "✗ GCC not found"
+        return 1
+    fi
+}
+
+check_cuda_version() {
+    echo "=== Checking CUDA version ==="
+    
+    if command -v nvcc &> /dev/null; then
+        cuda_version=$(nvcc --version | grep "release" | awk '{print $6}' | cut -d"," -f1 | cut -c2-)
+        major_version=$(echo $cuda_version | cut -d'.' -f1)
+        minor_version=$(echo $cuda_version | cut -d'.' -f2)
+
+        if [ "$major_version" -gt 11 ] || ([ "$major_version" -eq 11 ] && [ "$minor_version" -ge 8 ]); then
+            echo "✓ CUDA version: $cuda_version (>= 11.8)"
+            return 0
+        else
+            echo "✗ CUDA version: $cuda_version (< 11.8)"
+            return 1
+        fi
+    else
+        echo "✗ nvcc command not found, CUDA might not be installed"
+        return 1
+    fi
+}
+
+check_nvcc() {
+    echo "=== Checking nvcc availability ==="
+    
+    if command -v nvcc &> /dev/null; then
+        echo "✓ nvcc command exists"
+        return 0
+    else
+        echo "✗ nvcc command does not exist"
+        return 1
+    fi
+}
+
+perform_environment_check() {
+    echo "========================================"
+    echo "      Environment Check Starting"
+    echo "========================================"
+    echo ""
+    
+    # 环境检查结果标志
+    ENV_PASS=true
+    FORTRAN_COMPATIBLE=true
+    CUDA_COMPATIBLE=true
+    
+    # 检查 ifort 和 MKL
+    check_ifort_mkl
+    ifort_result=$?
+    check_mkl
+    mkl_result=$?
+    
+    if [ $ifort_result -eq 0 ] && [ $mkl_result -eq 0 ]; then
+        FORTRAN_COMPATIBLE=true
+    else
+        FORTRAN_COMPATIBLE=false
+    fi
+    
+    echo ""
+    
+    # 检查 GCC
+    check_gcc_version
+    gcc_result=$?
+    if [ $gcc_result -ne 0 ]; then
+        ENV_PASS=false
+    fi
+    echo ""
+    
+    # 检查 CUDA 相关信息 - 现在是强制要求
+    check_cuda_version
+    cuda_result=$?
+    if [ $cuda_result -ne 0 ]; then
+        CUDA_COMPATIBLE=false
+        ENV_PASS=false
+    fi
+    echo ""
+    
+    check_nvcc
+    nvcc_result=$?
+    if [ $nvcc_result -ne 0 ]; then
+        CUDA_COMPATIBLE=false
+        ENV_PASS=false
+    fi
+    echo ""
+    
+    echo "========================================"
+    echo "        Environment Summary"
+    echo "========================================"
+    
+    # 如果用户要求编译 Fortran 版本但环境不满足，则直接报错退出
+    if [ "$COMPILE_FORTRAN" = true ] && [ "$FORTRAN_COMPATIBLE" = false ]; then
+        echo "✗ Error: You requested Fortran compilation (-m nn) but the environment check failed for ifort/MKL."
+        echo "  Please install ifort (>= 19.1) and MKL before proceeding."
+        echo "  Or run without -m nn option to skip Fortran compilation."
+        ENV_PASS=false
+    fi
+    
+    # 如果 CUDA 检查失败，直接报错退出（GPU版本强制要求CUDA）
+    if [ "$CUDA_COMPATIBLE" = false ]; then
+        echo "✗ Error: CUDA environment check failed."
+        echo "  Please install CUDA (>= 11.8) and nvcc before proceeding."
+        ENV_PASS=false
+    fi
+    
+    # Summary output
+    if [ "$ENV_PASS" = true ]; then
+        echo "✓ Environment check completed. All requirements are satisfied."
+    else
+        echo "✗ Environment check failed. Please review the above errors."
+    fi
+    
+    if [ "$FORTRAN_COMPATIBLE" = false ] && [ "$COMPILE_FORTRAN" = false ]; then
+        echo ""
+        echo "⚠ Warning: ifort compiler or MKL library is missing or does not meet version requirements."
+        echo "  This will affect the compilation of Linear and NN models, but does not affect the use of DP and NEP models."
+    fi
+    
+    echo "========================================"
+    
+    # 如果环境检查失败，退出脚本
+    if [ "$ENV_PASS" = false ]; then
+        echo "Environment check failed. Aborting installation."
+        exit 1
+    fi
+}
+
+# Parse command line arguments
+while getopts "j:n:m:uh" opt; do
   case $opt in
     j)
       JOB_COUNT=$OPTARG
@@ -15,16 +205,47 @@ while getopts "j:n:" opt; do
       NEP_TYPES=$OPTARG
       echo "Using NEP_TYPES = $NEP_TYPES"
       ;;
+    m)
+      if [ "$OPTARG" = "nn" ]; then
+        COMPILE_FORTRAN=true
+        echo "Will compile LAMMPS Fortran version (for Linear and NN models)"
+      else
+        echo "Error: -m option only accepts 'nn' as argument"
+        show_help
+      fi
+      ;;
+    u)
+      UNPACK_ONLY=true
+      echo "Unpack-only mode enabled"
+      ;;
+    h)
+      show_help
+      ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
-      exit 1
+      show_help
       ;;
     :)
       echo "Option -$OPTARG requires an argument." >&2
-      exit 1
+      show_help
       ;;
   esac
 done
+
+# Handle --help option
+for arg in "$@"; do
+  if [ "$arg" == "--help" ]; then
+    show_help
+  fi
+done
+
+# 执行环境检查（跳过解压模式）
+if [ "$UNPACK_ONLY" = false ]; then
+    perform_environment_check
+fi
+
+echo ""
+echo "Starting file extraction..."
 
 SKIP=`awk '/^__ARCHIVE_BELOW__/ { print NR + 1; exit 0; }' $0`
 tail -n+$SKIP $0 | base64 -d > MatPL-2025.3.tar.gz.base64
@@ -37,68 +258,98 @@ LAMMPS_STABLE=$FINAL_DIR/lammps-stable      #./MatPL-2025.3/lammps-stable
 LAMMPS_FORTRAN=$FINAL_DIR/lammps-fortran    #./MatPL-2025.3/lammps-fortran 
 LAMMPS_LIBTORCH=$FINAL_DIR/lammps-2025.3    #./MatPL-2025.3/lammps-2025.3 
 
-# 创建最终目录
+# Create final directory
 mkdir -p $FINAL_DIR
 mkdir -p $ENV_DIR
 
-# 进入临时目录并解压
+# Enter temporary directory and extract (suppress output)
 cd $TEMP_DIR
-tar -xvzf $BASE_DIR/MatPL-2025.3.tar.gz.base64
+echo "Extracting archive (output suppressed)..."
+tar -xzf $BASE_DIR/MatPL-2025.3.tar.gz.base64 > /dev/null 2>&1
 
-# 解压 matpl 环境包
-tar -xvzf matpl-2025.3.tar.gz -C $ENV_DIR
+# Extract matpl environment package (suppress output)
+echo "Extracting matpl environment..."
+tar -xzf matpl-2025.3.tar.gz -C $ENV_DIR > /dev/null 2>&1
 
-# 检查 TEMP_DIR 内容以确认 lammps_2024.5 存在
-echo "TEMP_DIR :"
-ls $TEMP_DIR
-
-# 将 MatPL 和 lammps_2024.5 目录移至 FINAL_DIR
+# Move MatPL and lammps_2024.5 directories to FINAL_DIR
 mv $TEMP_DIR/MatPL-2025.3 $FINAL_DIR
-cp -r $TEMP_DIR/lammps-stable $LAMMPS_FORTRAN
+
+# 只有在需要编译 Fortran 版本时才复制 lammps-fortran 目录
+if [ "$COMPILE_FORTRAN" = true ]; then
+    cp -r $TEMP_DIR/lammps-stable $LAMMPS_FORTRAN
+fi
+
 cp -r $TEMP_DIR/lammps-stable $LAMMPS_LIBTORCH
 
-# 清理临时目录
+# Clean up temporary directory
 rm -rf $TEMP_DIR
 
-echo "copy lammps code done."
+echo "Copy LAMMPS code done."
 
-# copy forcefield
+# Copy forcefield
 cp -r $FINAL_DIR/MatPL-2025.3/src/lmps/lammps-libtorch/MATPL  $LAMMPS_LIBTORCH/src/
 cp -r $FINAL_DIR/MatPL-2025.3/src/lmps/lammps-libtorch/Makefile.mpi  $LAMMPS_LIBTORCH/src/MAKE
 
-cp -r $FINAL_DIR/MatPL-2025.3/src/lmps/lammps-fortran/MATPL  $LAMMPS_FORTRAN/src/
-cp -r $FINAL_DIR/MatPL-2025.3/src/lmps/lammps-fortran/Makefile.mpi  $LAMMPS_FORTRAN/src/MAKE
+# 只有在需要编译 Fortran 版本时才复制 Fortran 相关文件
+if [ "$COMPILE_FORTRAN" = true ]; then
+    cp -r $FINAL_DIR/MatPL-2025.3/src/lmps/lammps-fortran/MATPL  $LAMMPS_FORTRAN/src/
+    cp -r $FINAL_DIR/MatPL-2025.3/src/lmps/lammps-fortran/Makefile.mpi  $LAMMPS_FORTRAN/src/MAKE
+fi
 
-echo "copy MATPL code to lammps done."
+echo "Copy MATPL code to LAMMPS done."
 
 echo "The file has been decompressed."
 
-# 激活 matpl-2025.3 Python 环境
-source $ENV_DIR/bin/activate
+# If unpack-only mode is enabled, exit here
+if [ "$UNPACK_ONLY" = true ]; then
+  echo "Unpack-only mode completed."
+  exit 0
+fi
 
-# 编译 MatPL
+# Activate matpl-2025.3 Python environment
+source $ENV_DIR/bin/activate
+echo "ENV_DIR/bin/activate path is: $ENV_DIR/bin/activate"
+
+# Compile MatPL
 cd $MATPL/src
+echo "Compiling MatPL..."
 if [ $JOB_COUNT -gt 1 ]; then
     if [ -n "$NEP_TYPES" ]; then
-        sh build.sh -j$JOB_COUNT -n$NEP_TYPES
+        if [ "$COMPILE_FORTRAN" = true ]; then
+            sh build.sh -j$JOB_COUNT -n$NEP_TYPES -m nn
+        else
+            sh build.sh -j$JOB_COUNT -n$NEP_TYPES
+        fi
     else
-        sh build.sh -j$JOB_COUNT
+        if [ "$COMPILE_FORTRAN" = true ]; then
+            sh build.sh -j$JOB_COUNT -m nn
+        else
+            sh build.sh -j$JOB_COUNT
+        fi
     fi
 else
     if [ -n "$NEP_TYPES" ]; then
-        sh build.sh -n$NEP_TYPES
+        if [ "$COMPILE_FORTRAN" = true ]; then
+            sh build.sh -n$NEP_TYPES -m nn
+        else
+            sh build.sh -n$NEP_TYPES
+        fi
     else
-        sh build.sh
+        if [ "$COMPILE_FORTRAN" = true ]; then
+            sh build.sh -m nn
+        else
+            sh build.sh
+        fi
     fi
 fi
 
-# 设置环境变量
+# Set environment variables
 export PATH=$MATPL/src/bin:$PATH
 export PYTHONPATH=$MATPL/src/:$PYTHONPATH
 
 echo "The compilation of the MatPL-2025.3 machine learning force field training platform has been completed."
 
-# 编译 lammps-2025.3
+# Compile lammps-2025.3
 cd $LAMMPS_LIBTORCH/src/MATPL/NEP_GPU
 make clean
 if [ $JOB_COUNT -gt 1 ]; then
@@ -109,7 +360,7 @@ fi
 
 echo "The compilation of the lammps-2025.3 MATPL library has been completed. Start compiling LAMMPS ..."
 
-# 继续编译 LAMMPS 模块
+# Continue compiling LAMMPS module
 cd $LAMMPS_LIBTORCH/src
 make yes-KSPACE
 make yes-MANYBODY
@@ -131,54 +382,83 @@ fi
 
 echo "The compilation of the lammps-2025.3 has been completed."
 
+# 只在 COMPILE_FORTRAN 为 true 且 FORTRAN_COMPATIBLE 为 true 时编译 lammps-fortran
+if [ "$COMPILE_FORTRAN" = true ] && [ "$FORTRAN_COMPATIBLE" = true ]; then
+    # Compile lammps-fortran
+    cd $LAMMPS_FORTRAN/src/MATPL/fortran_code
+    make clean
+    if [ $JOB_COUNT -gt 1 ]; then
+        make -j$JOB_COUNT
+    else
+        make
+    fi
 
-# 编译 lammps-fortran
-cd $LAMMPS_FORTRAN/src/MATPL/fortran_code
-make clean
-if [ $JOB_COUNT -gt 1 ]; then
-    make -j$JOB_COUNT
-else
-    make
+    echo "The compilation of the lammps-fortran MATPL library has been completed. Start compiling LAMMPS ..."
+
+    # Continue compiling LAMMPS module
+    cd $LAMMPS_FORTRAN/src
+    make yes-KSPACE
+    make yes-MANYBODY
+    make yes-REAXFF
+    make yes-MOLECULE
+    make yes-QEQ
+    make yes-REPLICA
+    make yes-RIGID
+    make yes-MEAM
+    make yes-MC
+    make yes-MATPL
+    make yes-SHOCK
+
+    if [ $JOB_COUNT -gt 1 ]; then
+        make mpi -j$JOB_COUNT mode=shared
+    else
+        make mpi mode=shared
+    fi
+
+    echo "The compilation of the lammps-fortran has been completed."
+    
+    # 只在编译成功后创建 matpl-fortran-env.sh
+    echo "source $ENV_DIR/bin/activate" > $FINAL_DIR/matpl-fortran-env.sh
+    cat $MATPL/env.sh $LAMMPS_FORTRAN/env.sh >> $FINAL_DIR/matpl-fortran-env.sh
+    echo "Created matpl-fortran-env.sh for lammps-fortran"
+elif [ "$COMPILE_FORTRAN" = true ] && [ "$FORTRAN_COMPATIBLE" = false ]; then
+    # 这个分支实际上不应该被执行，因为环境检查时已经退出
+    echo "Error: Fortran compilation requested but environment check failed earlier."
+    exit 1
+elif [ "$COMPILE_FORTRAN" = false ]; then
+    echo "Skipping lammps-fortran compilation: -m nn option was not specified."
+    echo "Note: Without Fortran compilation, Linear and NN models cannot be used in LAMMPS MD simulations."
+    echo "      Only DP and NEP models are available for LAMMPS MD simulations."
 fi
-
-echo "The compilation of the lammps-fortran MATPL library has been completed. Start compiling LAMMPS ..."
-
-# 继续编译 LAMMPS 模块
-cd $LAMMPS_FORTRAN/src
-make yes-KSPACE
-make yes-MANYBODY
-make yes-REAXFF
-make yes-MOLECULE
-make yes-QEQ
-make yes-REPLICA
-make yes-RIGID
-make yes-MEAM
-make yes-MC
-make yes-MATPL
-make yes-SHOCK
-
-if [ $JOB_COUNT -gt 1 ]; then
-    make mpi -j$JOB_COUNT mode=shared
-else
-    make mpi mode=shared
-fi
-
-echo "The compilation of the lammps-fortran has been completed."
 
 echo "source $ENV_DIR/bin/activate" > $FINAL_DIR/matpl-env.sh
 cat $MATPL/env.sh $LAMMPS_LIBTORCH/env.sh >> $FINAL_DIR/matpl-env.sh
 
-echo "source $ENV_DIR/bin/activate" > $FINAL_DIR/matpl-fortran-env.sh
-cat $MATPL/env.sh $LAMMPS_FORTRAN/env.sh  >> $FINAL_DIR/matpl-fortran-env.sh
-
-# 清理临时文件
+# Clean up temporary files
 rm -rf $BASE_DIR/MatPL-2025.3.tar.gz.base64
 
-# 检查文件是否生成成功
-if [ -f "$FINAL_DIR/matpl-env.sh" ] && [ -f "$FINAL_DIR/matpl-fortran-env.sh" ]; then
-    echo "Installation completed successfully!"
+# Check if files are generated successfully
+echo ""
+if [ -f "$FINAL_DIR/matpl-env.sh" ]; then
+    echo "✓ Created matpl-env.sh for lammps-libtorch"
+    
+    if [ "$COMPILE_FORTRAN" = true ] && [ "$FORTRAN_COMPATIBLE" = true ] && [ -f "$FINAL_DIR/matpl-fortran-env.sh" ]; then
+        echo "✓ Created matpl-fortran-env.sh for lammps-fortran"
+        echo ""
+        echo "Installation completed successfully!"
+        echo "Both libtorch and fortran versions of LAMMPS are available."
+    elif [ "$COMPILE_FORTRAN" = false ]; then
+        echo ""
+        echo "Installation completed (Fortran version skipped):"
+        echo "  ✓ LAMMPS with libtorch support installed"
+        echo "  - LAMMPS with fortran support was not requested (-m nn not specified)"
+        echo ""
+        echo "DP and NEP models are fully functional."
+        echo "Note: Linear and NN models cannot be used in LAMMPS MD simulations."
+        echo "      To enable Linear/NN models, re-run with -m nn option."
+    fi
 else
-    echo "Installation encountered errors. Please check the installation logs!"
+    echo "✗ Installation encountered errors. Please check the installation logs!"
 fi
 
 exit 0

@@ -17,7 +17,6 @@ else
   MATPL_DIR=${BASE_DIR}/MatPL-${VERSION}
 fi
 source $ENV_DIR/bin/activate
-echo "ENV_DIR/bin/activate path for lammps install is: $ENV_DIR/bin/activate"
 
 LAMMPS_LIBTORCH=${BASE_DIR}/lammps-${VERSION}
 

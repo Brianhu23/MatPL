@@ -4,6 +4,7 @@
 JOB_COUNT=1
 NEP_TYPES=""  # 初始化为空
 
+
 PATCH_DIR=$(pwd)
 BASE_DIR=$1
 CPU_ONLY=$2
@@ -16,15 +17,14 @@ else
   ENV_DIR=${BASE_DIR}/matpl-${VERSION}
   MATPL_DIR=${BASE_DIR}/MatPL-${VERSION}
 fi
-source $ENV_DIR/bin/activate
-echo "ENV_DIR/bin/activate path for lammps install is: $ENV_DIR/bin/activate"
 
-LAMMPS_LIBTORCH=${BASE_DIR}/lammps-${VERSION}
+source $ENV_DIR/bin/activate
+LAMMPS_FORTRAN=$BASE_DIR/lammps-fortran
 
 echo "patch file dir is $PATCH_DIR"
 echo "MatPL root dir is $BASE_DIR"
 echo "ENV   root dir is $ENV_DIR"
-echo "LMPS  root dir is $LAMMPS_LIBTORCH"
+echo "LMPS  root dir is $LAMMPS_FORTRAN"
 ls $BASE_DIR
 
 # 解析命令行参数
@@ -49,28 +49,22 @@ while getopts "j:n:" opt; do
   esac
 done
 
-
-# 编译 lammps-2025.3
-if [ $CPU_ONLY -eq 0 ]; then
-  cd $LAMMPS_LIBTORCH/src/MATPL/NEP_GPU
+# 编译 lammps-fortran
+cd $LAMMPS_FORTRAN/src/MATPL/fortran_code
   if [ $CLEAN_ALL -eq 1 ]; then
       make clean
   fi
   if [ $JOB_COUNT -gt 1 ]; then
-      make -j$JOB_COUNT
+      make -j1 # $JOB_COUNT
   else
       make
   fi
-  cd ../../
-else
-  cd $LAMMPS_LIBTORCH/src
-fi
-
-echo "The compilation of the lammps-${VERSION} MATPL library has been completed. Start compiling LAMMPS ..."
+cd ../../
+echo "The compilation of the lammps-fortran MATPL library has been completed. Start compiling LAMMPS ..."
 
 # 继续编译 LAMMPS 模块 to src
 if [ $CLEAN_ALL -eq 1 ]; then
-    make clean-all 
+    make clean-all
 fi
 rm lmp_mpi -rf
 make yes-KSPACE
@@ -91,13 +85,14 @@ else
     make mpi mode=shared
 fi
 
-echo "The compilation of the lammps-${VERSION} has been completed."
+echo "The compilation of the lammps-fortran has been completed."
 
 # 检查文件是否生成成功
 if [ -f "lmp_mpi" ]; then
-    echo "Lammps libtorch version completed successfully!"
+    echo "Lammps fortran version completed successfully!"
 else
-    echo "Lammps libtorch version compilation  errors. Please check the installation logs!"
+    echo "Lammps fortran version compilation  errors. Please check the installation logs!"
 fi
 
 cd $PATCH_DIR
+

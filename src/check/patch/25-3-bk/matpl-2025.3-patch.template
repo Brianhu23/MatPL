@@ -8,10 +8,8 @@ NEP_TYPES=20 # Default value is 20
 EXTRACT_ONLY=0 # Flag for -c option
 CLEAN_ALL=0
 VERSION=2025.3
-PWDATA_PKG=pwdata-0.5.5.tar.gz
+PWDATA_PKG=pwdata-0.5.4.tar.gz
 PWACT_PKG=pwact-0.4.2.tar.gz
-COMPILE_FORTRAN=0  # 新增：是否编译 Fortran 版本
-
 # Parse command-line arguments
 show_help() {
     echo "Usage: $0 [OPTIONS]"
@@ -20,7 +18,6 @@ show_help() {
     echo "Options:"
     echo "  -j NUM     Number of CPU cores for compilation (default: 1)"
     echo "  -n NUM     Set NEP_TYPES value (default: 20)"
-    echo "  -m nn      Compile Fortran modules (for Linear and NN models)"
     echo "  -u         Extract-only mode, exit after extraction"
     echo "  -c         Clear all compilation caches before compiling"
     echo "  -h         Show this help message"
@@ -29,7 +26,7 @@ show_help() {
 }
 
 # Parse command-line arguments
-while getopts "j:n:m:uch" opt; do
+while getopts "j:n:uch" opt; do
   case $opt in
     j)
       JOB_COUNT=$OPTARG
@@ -38,15 +35,6 @@ while getopts "j:n:m:uch" opt; do
     n)
       NEP_TYPES=$OPTARG
       echo "Using NEP_TYPES = $NEP_TYPES"
-      ;;
-    m)
-      if [ "$OPTARG" = "nn" ]; then
-        COMPILE_FORTRAN=1
-        echo "Will compile Fortran modules (for Linear and NN models)"
-      else
-        echo "Error: -m option only accepts 'nn' as argument"
-        show_help
-      fi
       ;;
     u)
       EXTRACT_ONLY=1
@@ -170,12 +158,6 @@ fortran_change=$(( (exit_code >> 4) & 1 ))
 lmp_change=$(( (exit_code >> 5) & 1 ))
 lmpfortran_change=$(( (exit_code >> 6) & 1 ))
 
-# 如果不存在 -m nn 选项，将 Fortran 相关变化标记为 0
-if [ "$COMPILE_FORTRAN" -eq 0 ]; then
-    echo "Note: -m nn option not specified, ignoring Fortran-related changes"
-    fortran_change=0
-    lmpfortran_change=0
-fi
 
 # Output summary of check results
 echo "Check completed! Summary of results:"
@@ -188,9 +170,9 @@ if [ $CPU_ONLY -eq 0 ]; then
   echo "nep_change=$nep_change"
 fi
 echo "op_change=$op_change"
-echo "fortran_change=$fortran_change (after -m nn check: $COMPILE_FORTRAN)"
+echo "fortran_change=$fortran_change"
 echo "lmp_change=$lmp_change"
-echo "lmpfortran_change=$lmpfortran_change (after -m nn check: $COMPILE_FORTRAN)"
+echo "lmpfortran_change=$lmpfortran_change"
 echo "----------------------------------------"
 # Check if update is needed
 if [ $py_change -eq 0 ] && [ $nep_cpu_change -eq 0 ] && [ $nep_change -eq 0 ] && \
@@ -204,7 +186,6 @@ if [ $py_change -eq 0 ] && [ $nep_cpu_change -eq 0 ] && [ $nep_change -eq 0 ] &&
     exit 0
 fi
 
-#------------------------------
 # Perform environment checks
 echo "=========================================="
 echo "Starting environment checks..."
@@ -216,35 +197,27 @@ check_nvcc_val=0
 
 # Check ifort compiler version (no less than 19.1) and MKL library existence
 check_ifort_mkl() {
-    local ifort_ok=0
-    local mkl_ok=0
-    
     if command -v ifort &> /dev/null; then
         ifort_version=$(ifort --version | grep "ifort" | awk '{print $3}' | cut -d'.' -f1-2)
         major_version=$(echo $ifort_version | cut -d'.' -f1)
         minor_version=$(echo $ifort_version | cut -d'.' -f2)
       
         if [ "$major_version" -gt 19 ] || ([ "$major_version" -eq 19 ] && [ "$minor_version" -ge 1 ]); then
-            echo "✓ ifort version is no less than 19.1, current version is $ifort_version."
-            ifort_ok=1
+            echo "ifort version is no less than 19.1, current version is $ifort_version."
+            check_ifort_mkl_val=1
         else
-            echo "✗ ifort version is not greater than 19.1, current version is $ifort_version."
+            echo "ifort version is not greater than 19.1, current version is $ifort_version."
         fi
     else
-        echo "✗ ifort compiler not found."
+        echo "ifort compiler not found."
     fi
   
     # Check if MKL library exists
     if [ -d "/opt/intel/mkl" ] || [ -d "$MKLROOT" ]; then
-        echo "✓ MKL library is installed."
-        mkl_ok=1
-    else
-        echo "✗ MKL library is not installed."
-    fi
-    
-    # 只有当 ifort 和 MKL 都通过时，才认为 ifort/mkl 检查通过
-    if [ $ifort_ok -eq 1 ] && [ $mkl_ok -eq 1 ]; then
+        echo "MKL library is installed."
         check_ifort_mkl_val=1
+    else
+        echo "MKL library is not installed."
     fi
 }
 
@@ -252,14 +225,14 @@ check_ifort_mkl() {
 check_gcc_version() {
     if command -v gcc &> /dev/null; then
         gcc_version=$(gcc -dumpversion | cut -d. -f1)
-        if [ "$gcc_version" -ge 8 ]; then  # 修改为 >= 8，不限制必须等于 8
-            echo "✓ GCC version is $gcc_version (>= 8.0)."
+        if [ "$gcc_version" -eq 8 ]; then
+            echo "GCC version is exactly 8, current version is $gcc_version."
             check_gcc_version_val=1
         else
-            echo "✗ GCC version is $gcc_version (< 8.0)."
+            echo "GCC version is not 8, current version is $gcc_version."
         fi
     else
-        echo "✗ GCC not found."
+        echo "GCC not found."
     fi
 }
 
@@ -270,23 +243,23 @@ check_cuda_version() {
         major_version=$(echo $cuda_version | cut -d'.' -f1)
         minor_version=$(echo $cuda_version | cut -d'.' -f2)
         if [ "$major_version" -gt 11 ] || ([ "$major_version" -eq 11 ] && [ "$minor_version" -ge 8 ]); then
-            echo "✓ CUDA version is 11.8 or higher, current version is $cuda_version."
+            echo "CUDA version is 11.8 or higher, current version is $cuda_version."
             check_cuda_version_val=1
         else
-            echo "✗ CUDA version is lower than 11.8, current version is $cuda_version."
+            echo "CUDA version is lower than 11.8, current version is $cuda_version."
         fi
     else
-        echo "✗ nvcc command not found, CUDA might not be installed."
+        echo "nvcc command not found, CUDA might not be installed."
     fi
 }
 
 # Check if nvcc command exists
 check_nvcc() {
     if command -v nvcc &> /dev/null; then
-        echo "✓ nvcc command exists."
+        echo "nvcc command exists."
         check_nvcc_val=1
     else
-        echo "✗ nvcc command does not exist."
+        echo "nvcc command does not exist."
     fi
 }
 
@@ -296,8 +269,7 @@ check_gcc_version
 
 # 根据 CPU_ONLY 判断是否跳过 CUDA 相关检查
 if [ "$CPU_ONLY" -eq 1 ]; then
-    # CPU_ONLY 模式下不执行 CUDA 检查
-    echo "CPU-only mode: Skipping CUDA-related checks"
+    # CPU_ONLY 模式下直接设置变量，不输出任何信息
     check_cuda_version_val=1
     check_nvcc_val=1
 else
@@ -306,48 +278,25 @@ else
     check_nvcc
 fi
 
-echo "=========================================="
-echo "        Environment Check Summary"
-echo "=========================================="
-
-# 只有 gcc 检查失败时才终止编译
-if [ "$check_gcc_version_val" -eq 0 ]; then
-    echo "✗ Error: GCC version check failed (must be >= 8.0)."
-    echo "  Please install GCC version 8.0 or higher before proceeding."
+# Check if all conditions are met
+if [ "$check_ifort_mkl_val" -eq 1 ] && [ "$check_gcc_version_val" -eq 1 ] && \
+   [ "$check_cuda_version_val" -eq 1 ] && [ "$check_nvcc_val" -eq 1 ]; then
     echo "=========================================="
-    rm -rf "${TMP_EXTRACT_DIR}"
-    exit 1
-fi
-
-# 输出 ifort/mkl 检查结果
-if [ "$check_ifort_mkl_val" -eq 0 ]; then
-    echo "⚠ Warning: ifort compiler or MKL library is missing or does not meet version requirements."
-    echo "  This will affect the compilation of Fortran modules, but does not affect the use of DP and NEP models."
-    echo "  Linear and NN models' LAMMPS MD cannot be performed."
-fi
-
-# 输出 CUDA 检查结果（仅 GPU 版本）
-if [ "$CPU_ONLY" -eq 0 ]; then
-    if [ "$check_cuda_version_val" -eq 0 ] || [ "$check_nvcc_val" -eq 0 ]; then
-        echo "⚠ Warning: CUDA environment check failed."
-        echo "  This will affect the compilation of GPU-accelerated modules."
-        echo "  Please install CUDA (>= 11.8) and nvcc if you need GPU acceleration."
+    echo "Environment check passed"
+    echo "=========================================="
+else
+    echo "=========================================="
+    echo "Environment check failed, please ensure the following conditions are met:"
+    echo "1. ifort version >= 19.1"
+    echo "2. MKL library installed"
+    echo "3. GCC version is 8.x"
+    if [ "$CPU_ONLY" -ne 1 ]; then
+        echo "4. CUDA version >= 11.8 (if GPU compilation is needed)"
     fi
-fi
-
-# 如果用户要求编译 Fortran 版本但环境不满足，则报错退出
-if [ "$COMPILE_FORTRAN" -eq 1 ] && [ "$check_ifort_mkl_val" -eq 0 ]; then
-    echo "✗ Error: You requested Fortran compilation (-m nn) but the environment check failed for ifort/MKL."
-    echo "  Please install ifort (>= 19.1) and MKL before proceeding."
-    echo "  Or run without -m nn option to skip Fortran compilation."
     echo "=========================================="
     rm -rf "${TMP_EXTRACT_DIR}"
     exit 1
 fi
-
-echo "✓ Environment check completed."
-echo "=========================================="
-#------------------------------
 
 # Perform file copy operations with backup mechanism
 echo "Applying patch files with backup..."
@@ -490,22 +439,16 @@ compile_errors=0
 # Compile if fortran_change=1
 if [ $fortran_change -eq 1 ]; then
     echo "-------------------------------------------"
-    echo "Compiling Fortran module..."
-    # 只有在要求编译 Fortran 且环境检查通过时才编译
-    if [ "$COMPILE_FORTRAN" -eq 1 ] && [ "$check_ifort_mkl_val" -eq 1 ]; then
-        CMP_FORTRAN_SCRIPT="${TMP_EXTRACT_DIR}/cmp_fortran.sh"
-        if [ -f "$CMP_FORTRAN_SCRIPT" ]; then
-            bash "${CMP_FORTRAN_SCRIPT}" "${BASE_DIR}" "${VERSION}" "${MATPL_PREFIX}${VERSION}" "${CLEAN_ALL}" "${CPU_ONLY}" -j1 # "${JOB_COUNT}" has error in compile
-            if [ $? -ne 0 ]; then
-                echo "Error: fortran compilation failed"
-                compile_errors=1
-            fi
-        else
-            echo "Warning: cmp_fortran.sh script does not exist"
+    echo "Compiling Fortran module..."    
+    CMP_FORTRAN_SCRIPT="${TMP_EXTRACT_DIR}/cmp_fortran.sh"
+    if [ -f "$CMP_FORTRAN_SCRIPT" ]; then
+        bash "${CMP_FORTRAN_SCRIPT}" "${BASE_DIR}" "${VERSION}" "${MATPL_PREFIX}${VERSION}" "${CLEAN_ALL}" "${CPU_ONLY}" -j1 # "${JOB_COUNT}" has error in compile
+        if [ $? -ne 0 ]; then
+            echo "Error: fortran compilation failed"
+            compile_errors=1
         fi
     else
-        echo "Warning: Skipping Fortran compilation (not requested or environment check failed)"
-        echo "         Fortran modules will not be compiled, Linear and NN models cannot be used"
+        echo "Warning: cmp_fortran.sh script does not exist"
     fi
     echo "-------------------------------------------"
 fi
@@ -597,21 +540,15 @@ fi
 if [ $lmpfortran_change -eq 1 ] && [ $compile_errors -eq 0 ]; then
     echo "-------------------------------------------"
     echo "Compiling LAMMPS Fortran module..."
-    # 只有在要求编译 Fortran 且环境检查通过时才编译
-    if [ "$COMPILE_FORTRAN" -eq 1 ] && [ "$check_ifort_mkl_val" -eq 1 ]; then
-        CMP_LMPS_FORTRAN_SCRIPT="${TMP_EXTRACT_DIR}/cmp_lmps_fortran.sh"
-        if [ -f "$CMP_LMPS_FORTRAN_SCRIPT" ]; then
-            bash "${CMP_LMPS_FORTRAN_SCRIPT}" "${BASE_DIR}" "${CPU_ONLY}" "${VERSION}" "${CLEAN_ALL}" -j"${JOB_COUNT}"
-            if [ $? -ne 0 ]; then
-                echo "Error: LAMMPS Fortran compilation failed"
-                compile_errors=1
-            fi
-        else
-            echo "Warning: cmp_lmps_fortran.sh script does not exist"
+    CMP_LMPS_FORTRAN_SCRIPT="${TMP_EXTRACT_DIR}/cmp_lmps_fortran.sh"
+    if [ -f "$CMP_LMPS_FORTRAN_SCRIPT" ]; then
+        bash "${CMP_LMPS_FORTRAN_SCRIPT}" "${BASE_DIR}" "${CPU_ONLY}" "${VERSION}" "${CLEAN_ALL}" -j"${JOB_COUNT}"
+        if [ $? -ne 0 ]; then
+            echo "Error: LAMMPS Fortran compilation failed"
+            compile_errors=1
         fi
     else
-        echo "Warning: Skipping LAMMPS Fortran compilation (not requested or environment check failed)"
-        echo "         LAMMPS Fortran modules will not be compiled, Linear and NN models' LAMMPS MD cannot be performed"
+        echo "Warning: cmp_lmps_fortran.sh script does not exist"
     fi
     echo "-------------------------------------------"
 fi
@@ -639,27 +576,18 @@ echo "Installation completion time: $(date)"
 if [ $compile_errors -eq 0 ]; then
     echo "Status: Installation completed successfully"
     echo "Updated modules:"
-    [ $fortran_change -eq 1 ] && [ "$COMPILE_FORTRAN" -eq 1 ] && [ "$check_ifort_mkl_val" -eq 1 ] && echo " - FORTRAN"
+    [ $fortran_change -eq 1 ] && echo " - FORTRAN"
     [ $nep_cpu_change -eq 1 ] && echo " - NEP CPU"
     if [ $CPU_ONLY -eq 0 ]; then
     [ $nep_change -eq 1 ] && echo " - NEP GPU"
     fi
     [ $op_change -eq 1 ] && echo " - OP"
     [ $lmp_change -eq 1 ] && echo " - LAMMPS"
-    [ $lmpfortran_change -eq 1 ] && [ "$COMPILE_FORTRAN" -eq 1 ] && [ "$check_ifort_mkl_val" -eq 1 ] && echo " - LAMMPS Fortran"
+    [ $lmpfortran_change -eq 1 ] && echo " - LAMMPS Fortran"
     echo ""
     echo "Compilation parameters:"
     echo " CPU core count: $JOB_COUNT"
     echo " NEP type count: $NEP_TYPES"
-    echo " Compile Fortran: $([ "$COMPILE_FORTRAN" -eq 1 ] && echo "Yes" || echo "No")"
-    
-    # 输出 Fortran 相关警告
-    if [ "$COMPILE_FORTRAN" -eq 0 ]; then
-        echo ""
-        echo "Note: Fortran compilation was not requested (-m nn not specified)."
-        echo "      Linear and NN models cannot be used in LAMMPS MD simulations."
-        echo "      To enable Linear/NN models, re-run with -m nn option."
-    fi
 else
     echo "Status: Errors occurred during installation"
     echo "Please check compilation logs and fix issues manually"
@@ -668,3 +596,4 @@ echo "=========================================="
 exit $compile_errors
 
 __ARCHIVE_BELOW__
+

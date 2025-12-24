@@ -6,7 +6,7 @@ CURRENT_DATE=$(date +%Y.%m.%d)
 # 定义源目录和输出文件名
 SOURCE_DIR="Patch-MatPL-2025.3"
 PWACT_DIR="pwact-0.4.2.tar.gz"
-PWDATA_DIR="pwdata-0.5.6.tar.gz"
+PWDATA_DIR="pwdata-0.5.4.tar.gz"
 OUTPUT_TARFILE="matpl-patch-${CURRENT_DATE}.tar.gz"
 OUTPUT_BASE64="matpl-patch-${CURRENT_DATE}.tar.gz.base64"
 OUTPUT_SHFILE="matpl-patch-${CURRENT_DATE}.sh" 

@@ -22,7 +22,6 @@ fi
 
 # 激活 matpl-2025.3 Python 环境
 source $ENV_DIR/bin/activate
-echo "ENV_DIR/bin/activate path for pip install is: $ENV_DIR/bin/activate"
 
 # Build full package paths
 PWDATA_PACKAGE="$PWDATA_NAME"
