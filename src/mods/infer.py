@@ -45,8 +45,8 @@ class Inference(object):
                 self.calc = FindNeigh()
                 self.calc.init_model(self.ckpt_file)
             else:
-                from src.feature.NEP_GPU.build.nep_gpu import NEP3
-                self.calc = NEP3()
+                from src.feature.NEP_GPU.build.nep_gpu import NEP
+                self.calc = NEP()
                 self.calc.init_from_file(self.ckpt_file, 1, 0)
             
             if "tmp_matpl_nep" in self.ckpt_file:

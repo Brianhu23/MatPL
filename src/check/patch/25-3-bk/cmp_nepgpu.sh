@@ -59,6 +59,6 @@ fi
 mkdir -p build
 cd build
 cmake -Dpybind11_DIR=$(python -m pybind11 --cmakedir) .. && $MAKE_CMD
-cp nep3_module*.so nep_gpu.so
+cp nep_module*.so nep_gpu.so
 cd $PATCH_DIR
 echo "Feature dir compilation successful!"

@@ -25,9 +25,9 @@ find_package(CUDA 11.8 REQUIRED)
 enable_language(CUDA)
 
 # 添加 pybind11 包装代码
-pybind11_add_module(nep3_module
-    force/nep3_pybind.cpp  # Pybind11 包装的 C++ 文件
-    force/nep3.cu          # CUDA 代码
+pybind11_add_module(nep_module
+    force/nep_pybind.cpp  # Pybind11 包装的 C++ 文件
+    force/nep.cu          # CUDA 代码
     force/box.cu
     utilities/gpu_vector.cu # 其他 CUDA 实现
     utilities/main_common.cu
@@ -35,12 +35,12 @@ pybind11_add_module(nep3_module
 )
 
 # 包含 CUDA 和本地目录
-target_include_directories(nep3_module PRIVATE
+target_include_directories(nep_module PRIVATE
     ${CUDA_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/force
     ${CMAKE_CURRENT_SOURCE_DIR}/utilities
 )
 
 # 链接 CUDA 库
-target_link_libraries(nep3_module PRIVATE ${CUDA_LIBRARIES})
+target_link_libraries(nep_module PRIVATE ${CUDA_LIBRARIES})
 

@@ -1,5 +1,5 @@
 /*
-This code is developed based on the GPUMD source code and adds ghost atom processing in LAMMPS. 
+This code is developed based on the GPUMD source code and added ghost atom processing in LAMMPS. 
   Support multi GPUs.
   Support GPUMD NEP shared bias and PWMLFF NEP independent bias forcefield.
 
@@ -32,8 +32,8 @@ Combining high accuracy and low cost in atomistic simulations and application to
 heat transport, Phys. Rev. B. 104, 104309 (2021).
 ------------------------------------------------------------------------------*/
 
-#include "nep3.cuh"
-#include "nep3_small_box.cuh"
+#include "nep.cuh"
+#include "nep_functions.cuh"
 #include "../utilities/common.cuh"
 #include "../utilities/error.cuh"
 #include "../utilities/nep_utilities.cuh"
@@ -69,7 +69,7 @@ int countNonEmptyLines(const char* filename) {
     return nonEmptyLineCount;
 }
 
-static void get_expanded_box(const double rc, const Box& box, NEP3::ExpandedBox& ebox)
+static void get_expanded_box(const double rc, const Box& box, NEP::ExpandedBox& ebox)
 {
   double volume = box.get_volume();
 
@@ -113,9 +113,9 @@ static void get_expanded_box(const double rc, const Box& box, NEP3::ExpandedBox&
   // printf("===ebox[9-17] %f %f %f %f %f %f %f %f %f  ===\n", ebox.h[9], ebox.h[10], ebox.h[11], ebox.h[12], ebox.h[13], ebox.h[14], ebox.h[15], ebox.h[16], ebox.h[17]);
 }
 
-NEP3::NEP3() {}
+NEP::NEP() {}
 
-void NEP3::init_from_file(const char* file_potential, const bool is_rank_0, const int in_device_id)
+void NEP::init_from_file(const char* file_potential, const bool is_rank_0, const int in_device_id)
 {
   int neplinenums = countNonEmptyLines(file_potential);
 
@@ -460,20 +460,15 @@ void NEP3::init_from_file(const char* file_potential, const bool is_rank_0, cons
     }
     zbl.num_types = paramb.num_types;
   }
-
-#ifdef USE_TABLE
-  construct_table(parameters.data());
-  printf("    use tabulated radial functions to speed up.\n");
-#endif
 }
 
-NEP3::~NEP3(void)
+NEP::~NEP(void)
 {
   // nothing
 }
 
 
-void NEP3::checkMemoryUsage(int sgin) {
+void NEP::checkMemoryUsage(int sgin) {
   // if (rank_0) {
     size_t free_mem, total_mem;
     cudaError_t error = cudaMemGetInfo(&free_mem, &total_mem);
@@ -486,7 +481,7 @@ void NEP3::checkMemoryUsage(int sgin) {
   // }
 }
 
-void NEP3::rest_nep_data(int input_atom_num) {
+void NEP::rest_nep_data(int input_atom_num) {
   if (atom_nums != input_atom_num) {
     atom_nums = input_atom_num;
     nep_data.NN_radial.resize(atom_nums);
@@ -523,11 +518,11 @@ void NEP3::rest_nep_data(int input_atom_num) {
   nep_data.total_virial.fill(0.0);
 }
 
-void NEP3::update_potential(float* parameters, ANN& ann)
+void NEP::update_potential(float* parameters, ANN& ann)
 {
   float* pointer = parameters;
   for (int t = 0; t < paramb.num_types; ++t) {
-    if (t > 0 && paramb.version == 3) { // Use the same set of NN parameters for NEP2 and NEP3_CPU
+    if (t > 0 && paramb.version == 3) { 
       pointer -= (ann.dim + 2) * ann.num_neurons1;
     }
     ann.w0[t] = pointer;
@@ -547,7 +542,7 @@ void NEP3::update_potential(float* parameters, ANN& ann)
   ann.c = pointer;
 }
 
-void NEP3::inference(
+void NEP::inference(
   int N, //atom nums
   int* itype_cpu, //atoms' type,the len is [n_all]
   double* box_cpu, // [xx, yx, zx, xy, yy, zy, xz, yz, zz]
@@ -622,7 +617,7 @@ void NEP3::inference(
   //   printf("\n");
   // }
 
-  find_descriptor_large_box<<<grid_size, BLOCK_SIZE>>>(
+  find_descriptor<<<grid_size, BLOCK_SIZE>>>(
     paramb,
     annmb,
     box,
@@ -640,11 +635,6 @@ void NEP3::inference(
     nep_data.r12.data() + size_x12 * 3,
     nep_data.r12.data() + size_x12 * 4,
     nep_data.r12.data() + size_x12 * 5,
-    // false,//is_polarizability
-#ifdef USE_TABLE
-    nep_data.gn_radial.data(),
-    nep_data.gn_angular.data(),
-#endif
     nep_data.potential_per_atom.data(),
     nep_data.Fp.data(),
     nep_data.virial_per_atom.data(),
@@ -658,7 +648,7 @@ void NEP3::inference(
   // }
   
   // // bool is_dipole = paramb.model_type == 1;
-  find_force_radial_small_box<<<grid_size, BLOCK_SIZE>>>(
+  find_force_radial<<<grid_size, BLOCK_SIZE>>>(
     paramb,
     annmb,
     N,
@@ -670,9 +660,6 @@ void NEP3::inference(
     nep_data.r12.data() + size_x12,
     nep_data.r12.data() + size_x12 * 2,
     nep_data.Fp.data(),
-#ifdef USE_TABLE
-    nep_data.gnp_radial.data(),
-#endif
     nep_data.force_per_atom.data(),
     nep_data.force_per_atom.data() + N,
     nep_data.force_per_atom.data() + N * 2,
@@ -695,7 +682,7 @@ void NEP3::inference(
   //     ii, tmp_viral[ii], tmp_viral[ii + N], tmp_viral[ii + N * 2]);
   // }
 
-  find_force_angular_small_box<<<grid_size, BLOCK_SIZE>>>(
+  find_force_angular<<<grid_size, BLOCK_SIZE>>>(
     paramb,
     annmb,
     N,
@@ -708,72 +695,13 @@ void NEP3::inference(
     nep_data.r12.data() + size_x12 * 5,
     nep_data.Fp.data(),
     nep_data.sum_fxyz.data(),
-#ifdef USE_TABLE
-    nep_data.gn_angular.data(),
-    nep_data.gnp_angular.data(),
-#endif
     nep_data.force_per_atom.data(),
     nep_data.force_per_atom.data() + N,
     nep_data.force_per_atom.data() + N * 2,
     nep_data.virial_per_atom.data(),
     nep_data.total_virial.data());
   CUDA_CHECK_KERNEL
-//   find_partial_force_angular_large_box<<<grid_size, BLOCK_SIZE>>>(
-//     paramb,
-//     annmb,
-//     N,
-//     N1,
-//     nep_data.NN_angular.data(),
-//     nep_data.NL_angular.data(),
-//     lmp_data.type.data(),
-//     nep_data.r12.data() + size_x12 * 3,
-//     nep_data.r12.data() + size_x12 * 4,
-//     nep_data.r12.data() + size_x12 * 5,
-//     nep_data.Fp.data(),
-//     nep_data.sum_fxyz.data(),
-// #ifdef USE_TABLE
-//     nep_data.gn_angular.data(),
-//     nep_data.gnp_angular.data(),
-// #endif
-//     nep_data.f12x.data(),
-//     nep_data.f12y.data(),
-//     nep_data.f12z.data()
-//     // nep_data.force_per_atom.data(),
-//     // nep_data.force_per_atom.data() + n_all,
-//     // nep_data.force_per_atom.data() + n_all * 2,
-//     // nep_data.virial_per_atom.data(),
-//     // nep_data.total_virial.data()
-//     );
-//   CUDA_CHECK_KERNEL
 
-//   // cudaDeviceSynchronize();
-//   // std::vector<float> tmp_f12x(atom_nums * paramb.MN_angular);
-//   // nep_data.f12x.copy_to_host(tmp_f12x.data());
-//   // for (int ii = 0; ii < 10; ii++) {
-//   //   printf("partial tmp_f12x[%d]=%f\n", ii, tmp_f12x[ii]);
-//   // }
-
-//   gpu_find_force_many_body<<<grid_size, BLOCK_SIZE>>>(
-//     N,
-//     N1,
-//     nep_data.NN_angular.data(),
-//     nep_data.NL_angular.data(),
-//     nep_data.r12.data() + size_x12 * 3,
-//     nep_data.r12.data() + size_x12 * 4,
-//     nep_data.r12.data() + size_x12 * 5,
-//     nep_data.f12x.data(),
-//     nep_data.f12y.data(),
-//     nep_data.f12z.data(),
-//     nep_data.force_per_atom.data(),
-//     nep_data.force_per_atom.data() + N,
-//     nep_data.force_per_atom.data() + N * 2, 
-//     nep_data.virial_per_atom.data());
-//   CUDA_CHECK_KERNEL
-//   // nep_data.force_per_atom.copy_to_host(cpu_force_per_atom);
-//   // for (int ii = 0; ii < N; ii++) {
-//   //   printf("many_body force[%d]=%f %f %f\n", 
-//   //   ii, cpu_force_per_atom[ii], cpu_force_per_atom[ii+N], cpu_force_per_atom[ii+N*2]);
-//   // }
   if (zbl.enabled) {
     find_force_ZBL<<<grid_size, BLOCK_SIZE>>>(
       zbl,

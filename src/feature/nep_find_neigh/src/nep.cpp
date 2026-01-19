@@ -36,7 +36,6 @@ heat transport, Phys. Rev. B. 104, 104309 (2021).
 ------------------------------------------------------------------------------*/
 
 #include "nep.h"
-// #include "dftd3para.h"
 #include <algorithm>
 #include <cmath>
 #include <fstream>
@@ -161,7 +160,6 @@ void apply_ann_one_layer_nep5(
     }
   }
   energy -= w1[num_neurons1] + b1[0]; // typewise bias + common bias
-  // std::cout << "ann last bias " <<  b1[atom_type_i] <<" type " << atom_type_i << " b1[0] " << b1[0] << std::endl;
 }
 
 void find_fc(double rc, double rcinv, double d12, double& fc)
@@ -870,83 +868,13 @@ void find_q_with_5body(const int n_max_angular_plus_1, const int n, const double
                                     C5B[2] * s1_sq_plus_s2_sq * s1_sq_plus_s2_sq;
 }
 
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-const int table_length = 2001;
-const int table_segments = table_length - 1;
-const double table_resolution = 0.0005;
-
-void find_index_and_weight(
-  const double d12_reduced,
-  int& index_left,
-  int& index_right,
-  double& weight_left,
-  double& weight_right)
-{
-  double d12_index = d12_reduced * table_segments;
-  index_left = int(d12_index);
-  if (index_left == table_segments) {
-    --index_left;
-  }
-  index_right = index_left + 1;
-  weight_right = d12_index - index_left;
-  weight_left = 1.0 - weight_right;
-}
-
-void construct_table_radial_or_angular(
-  const int version,
-  const int num_types,
-  const int num_types_sq,
-  const int n_max,
-  const int basis_size,
-  const double rc,
-  const double rcinv,
-  const double* c,
-  double* gn,
-  double* gnp)
-{
-  for (int table_index = 0; table_index < table_length; ++table_index) {
-    double d12 = table_index * table_resolution * rc;
-    double fc12, fcp12;
-    find_fc_and_fcp(rc, rcinv, d12, fc12, fcp12);
-    for (int t1 = 0; t1 < num_types; ++t1) {
-      for (int t2 = 0; t2 < num_types; ++t2) {
-        int t12 = t1 * num_types + t2;
-        double fn12[MAX_NUM_N];
-        double fnp12[MAX_NUM_N];
-        if (version == 2) {
-          find_fn_and_fnp(n_max, rcinv, d12, fc12, fcp12, fn12, fnp12);
-          for (int n = 0; n <= n_max; ++n) {
-            int index_all = (table_index * num_types_sq + t12) * (n_max + 1) + n;
-            gn[index_all] = fn12[n] * ((num_types == 1) ? 1.0 : c[n * num_types_sq + t12]);
-            gnp[index_all] = fnp12[n] * ((num_types == 1) ? 1.0 : c[n * num_types_sq + t12]);
-          }
-        } else {
-          find_fn_and_fnp(basis_size, rcinv, d12, fc12, fcp12, fn12, fnp12);
-          for (int n = 0; n <= n_max; ++n) {
-            double gn12 = 0.0;
-            double gnp12 = 0.0;
-            for (int k = 0; k <= basis_size; ++k) {
-              gn12 += fn12[k] * c[(n * (basis_size + 1) + k) * num_types_sq + t12];
-              gnp12 += fnp12[k] * c[(n * (basis_size + 1) + k) * num_types_sq + t12];
-            }
-            int index_all = (table_index * num_types_sq + t12) * (n_max + 1) + n;
-            gn[index_all] = gn12;
-            gnp[index_all] = gnp12;
-          }
-        }
-      }
-    }
-  }
-}
-#endif
-
-void find_descriptor_small_box(
+void find_descriptor(
   const bool calculating_potential,
   const bool calculating_descriptor,
   const bool calculating_latent_space,
   const bool calculating_polarizability,
-  NEP3_CPU::ParaMB& paramb,
-  NEP3_CPU::ANN& annmb,
+  NEP_CPU::ParaMB& paramb,
+  NEP_CPU::ANN& annmb,
   const int N,
   const int* g_NN_radial,
   const int* g_NL_radial,
@@ -959,10 +887,6 @@ void find_descriptor_small_box(
   const double* g_x12_angular,
   const double* g_y12_angular,
   const double* g_z12_angular,
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-  const double* g_gn_radial,
-  const double* g_gn_angular,
-#endif
   double* g_Fp,
   double* g_sum_fxyz,
   double* g_potential,
@@ -984,20 +908,6 @@ void find_descriptor_small_box(
       double r12[3] = {g_x12_radial[index], g_y12_radial[index], g_z12_radial[index]};
       double d12 = sqrt(r12[0] * r12[0] + r12[1] * r12[1] + r12[2] * r12[2]);
       // printf("feat n1 %d t1 %d n2 %d t2 %d d12 %f = %f %f %f\n",n1, t1, n2, t2, d12, r12[0], r12[1], r12[2]);
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-      int index_left, index_right;
-      double weight_left, weight_right;
-      find_index_and_weight(
-        d12 * paramb.rcinv_radial, index_left, index_right, weight_left, weight_right);
-      int t12 = t1 * paramb.num_types + g_type[n2];
-      for (int n = 0; n <= paramb.n_max_radial; ++n) {
-        q[n] +=
-          g_gn_radial[(index_left * paramb.num_types_sq + t12) * (paramb.n_max_radial + 1) + n] *
-            weight_left +
-          g_gn_radial[(index_right * paramb.num_types_sq + t12) * (paramb.n_max_radial + 1) + n] *
-            weight_right;
-      }
-#else
       double fc12;
       find_fc(paramb.rc_radial, paramb.rcinv_radial, d12, fc12);
       double fn12[MAX_NUM_N];
@@ -1024,7 +934,6 @@ void find_descriptor_small_box(
           q[n] += gn12;
         }
       }
-#endif
     }
 
     for (int n = 0; n <= paramb.n_max_angular; ++n) {
@@ -1034,19 +943,6 @@ void find_descriptor_small_box(
         int n2 = g_NL_angular[index];
         double r12[3] = {g_x12_angular[index], g_y12_angular[index], g_z12_angular[index]};
         double d12 = sqrt(r12[0] * r12[0] + r12[1] * r12[1] + r12[2] * r12[2]);
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-        int index_left, index_right;
-        double weight_left, weight_right;
-        find_index_and_weight(
-          d12 * paramb.rcinv_angular, index_left, index_right, weight_left, weight_right);
-        int t12 = t1 * paramb.num_types + g_type[n2];
-        double gn12 =
-          g_gn_angular[(index_left * paramb.num_types_sq + t12) * (paramb.n_max_angular + 1) + n] *
-            weight_left +
-          g_gn_angular[(index_right * paramb.num_types_sq + t12) * (paramb.n_max_angular + 1) + n] *
-            weight_right;
-        accumulate_s(d12, r12[0], r12[1], r12[2], gn12, s);
-#else
         double fc12;
         find_fc(paramb.rc_angular, paramb.rcinv_angular, d12, fc12);
         int t2 = g_type[n2];
@@ -1070,7 +966,6 @@ void find_descriptor_small_box(
           }
           accumulate_s(d12, r12[0], r12[1], r12[2], gn12, s);
         }
-#endif
       }
       if (paramb.num_L == paramb.L_max) {
         find_q(paramb.n_max_angular + 1, n, s, q + (paramb.n_max_radial + 1));
@@ -1143,10 +1038,10 @@ void find_descriptor_small_box(
   }
 }
 
-void find_force_radial_small_box(
+void find_force_radial(
   const bool is_dipole,
-  NEP3_CPU::ParaMB& paramb,
-  NEP3_CPU::ANN& annmb,
+  NEP_CPU::ParaMB& paramb,
+  NEP_CPU::ANN& annmb,
   const int N,
   const int* g_NN,
   const int* g_NL,
@@ -1155,9 +1050,6 @@ void find_force_radial_small_box(
   const double* g_y12,
   const double* g_z12,
   const double* g_Fp,
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-  const double* g_gnp_radial,
-#endif
   double* g_fx,
   double* g_fy,
   double* g_fz,
@@ -1174,24 +1066,6 @@ void find_force_radial_small_box(
       double d12 = sqrt(r12[0] * r12[0] + r12[1] * r12[1] + r12[2] * r12[2]);
       double d12inv = 1.0 / d12;
       double f12[3] = {0.0};
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-      int index_left, index_right;
-      double weight_left, weight_right;
-      find_index_and_weight(
-        d12 * paramb.rcinv_radial, index_left, index_right, weight_left, weight_right);
-      int t12 = t1 * paramb.num_types + t2;
-      for (int n = 0; n <= paramb.n_max_radial; ++n) {
-        double gnp12 =
-          g_gnp_radial[(index_left * paramb.num_types_sq + t12) * (paramb.n_max_radial + 1) + n] *
-            weight_left +
-          g_gnp_radial[(index_right * paramb.num_types_sq + t12) * (paramb.n_max_radial + 1) + n] *
-            weight_right;
-        double tmp12 = g_Fp[n1 + n * N] * gnp12 * d12inv;
-        for (int d = 0; d < 3; ++d) {
-          f12[d] += tmp12 * r12[d];
-        }
-      }
-#else
       double fc12, fcp12;
       find_fc_and_fcp(paramb.rc_radial, paramb.rcinv_radial, d12, fc12, fcp12);
       double fn12[MAX_NUM_N];
@@ -1223,7 +1097,6 @@ void find_force_radial_small_box(
           }
         }
       }
-#endif
 
       if (g_fx) {
         g_fx[n1] += f12[0];
@@ -1268,10 +1141,10 @@ void find_force_radial_small_box(
   }
 }
 
-void find_force_angular_small_box(
+void find_force_angular(
   const bool is_dipole,
-  NEP3_CPU::ParaMB& paramb,
-  NEP3_CPU::ANN& annmb,
+  NEP_CPU::ParaMB& paramb,
+  NEP_CPU::ANN& annmb,
   const int N,
   const int* g_NN_angular,
   const int* g_NL_angular,
@@ -1281,10 +1154,6 @@ void find_force_angular_small_box(
   const double* g_z12,
   const double* g_Fp,
   const double* g_sum_fxyz,
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-  const double* g_gn_angular,
-  const double* g_gnp_angular,
-#endif
   double* g_fx,
   double* g_fy,
   double* g_fz,
@@ -1310,32 +1179,6 @@ void find_force_angular_small_box(
       double r12[3] = {g_x12[index], g_y12[index], g_z12[index]};
       double d12 = sqrt(r12[0] * r12[0] + r12[1] * r12[1] + r12[2] * r12[2]);
       double f12[3] = {0.0};
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-      int index_left, index_right;
-      double weight_left, weight_right;
-      find_index_and_weight(
-        d12 * paramb.rcinv_angular, index_left, index_right, weight_left, weight_right);
-      int t12 = t1 * paramb.num_types + g_type[n2];
-      for (int n = 0; n <= paramb.n_max_angular; ++n) {
-        int index_left_all =
-          (index_left * paramb.num_types_sq + t12) * (paramb.n_max_angular + 1) + n;
-        int index_right_all =
-          (index_right * paramb.num_types_sq + t12) * (paramb.n_max_angular + 1) + n;
-        double gn12 =
-          g_gn_angular[index_left_all] * weight_left + g_gn_angular[index_right_all] * weight_right;
-        double gnp12 = g_gnp_angular[index_left_all] * weight_left +
-                       g_gnp_angular[index_right_all] * weight_right;
-        if (paramb.num_L == paramb.L_max) {
-          accumulate_f12(n, paramb.n_max_angular + 1, d12, r12, gn12, gnp12, Fp, sum_fxyz, f12);
-        } else if (paramb.num_L == paramb.L_max + 1) {
-          accumulate_f12_with_4body(
-            n, paramb.n_max_angular + 1, d12, r12, gn12, gnp12, Fp, sum_fxyz, f12);
-        } else {
-          accumulate_f12_with_5body(
-            n, paramb.n_max_angular + 1, d12, r12, gn12, gnp12, Fp, sum_fxyz, f12);
-        }
-      }
-#else
       double fc12, fcp12;
       find_fc_and_fcp(paramb.rc_angular, paramb.rcinv_angular, d12, fc12, fcp12);
       int t2 = g_type[n2];
@@ -1379,7 +1222,6 @@ void find_force_angular_small_box(
           }
         }
       }
-#endif
       // printf("angular_in n1=%d, n2=%d, r12=%f, f12[0]=%f, f12[1]=%f, f12[2]=%f\n",n1, n2, d12, f12[0],f12[1],f12[2]);
       if (g_fx) {
         g_fx[n1] += f12[0];
@@ -1424,9 +1266,9 @@ void find_force_angular_small_box(
   }
 }
 
-void find_force_ZBL_small_box(
+void find_force_ZBL(
   const int N,
-  const NEP3_CPU::ZBL& zbl,
+  const NEP_CPU::ZBL& zbl,
   const int* g_NN,
   const int* g_NL,
   const int* g_type,
@@ -1505,516 +1347,6 @@ void find_force_ZBL_small_box(
       g_total_virial[8] -= r12[2] * f12[2]; // zz
       
       g_pe[n1] += f * 0.5;
-    }
-  }
-}
-
-void find_descriptor_for_lammps(
-  NEP3_CPU::ParaMB& paramb,
-  NEP3_CPU::ANN& annmb,
-  int nlocal,
-  int N,
-  int* g_ilist,
-  int* g_NN,
-  int** g_NL,
-  int* g_type,
-  std::vector<int> map_atom_type_idx,
-  double** g_pos,
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-  const double* g_gn_radial,
-  const double* g_gn_angular,
-#endif
-  double* g_Fp,
-  double* g_sum_fxyz,
-  double& g_total_potential,
-  double* g_potential)
-{
-  for (int ii = 0; ii < N; ++ii) {
-    int n1 = g_ilist[ii];
-    int t1 = map_atom_type_idx[g_type[n1] - 1];
-    double q[MAX_DIM] = {0.0};
-
-    for (int i1 = 0; i1 < g_NN[n1]; ++i1) {
-      int n2 = g_NL[n1][i1];
-      double r12[3] = {
-        g_pos[n2][0] - g_pos[n1][0], g_pos[n2][1] - g_pos[n1][1], g_pos[n2][2] - g_pos[n1][2]};
-
-      double d12sq = r12[0] * r12[0] + r12[1] * r12[1] + r12[2] * r12[2];
-      if (d12sq >= paramb.rc_radial * paramb.rc_radial) {
-        continue;
-      }
-      double d12 = sqrt(d12sq);
-      int t2 = map_atom_type_idx[g_type[n2] - 1]; // from LAMMPS to NEP convention
-
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-      int index_left, index_right;
-      double weight_left, weight_right;
-      find_index_and_weight(
-        d12 * paramb.rcinv_radial, index_left, index_right, weight_left, weight_right);
-      int t12 = t1 * paramb.num_types + t2;
-      for (int n = 0; n <= paramb.n_max_radial; ++n) {
-        q[n] +=
-          g_gn_radial[(index_left * paramb.num_types_sq + t12) * (paramb.n_max_radial + 1) + n] *
-            weight_left +
-          g_gn_radial[(index_right * paramb.num_types_sq + t12) * (paramb.n_max_radial + 1) + n] *
-            weight_right;
-      }
-#else
-      double fc12;
-      find_fc(paramb.rc_radial, paramb.rcinv_radial, d12, fc12);
-      double fn12[MAX_NUM_N];
-      if (paramb.version == 2) {
-        find_fn(paramb.n_max_radial, paramb.rcinv_radial, d12, fc12, fn12);
-        for (int n = 0; n <= paramb.n_max_radial; ++n) {
-          double c = (paramb.num_types == 1)
-                       ? 1.0
-                       : annmb.c[(n * paramb.num_types + t1) * paramb.num_types + t2];
-          q[n] += fn12[n] * c;
-        }
-      } else {
-        find_fn(paramb.basis_size_radial, paramb.rcinv_radial, d12, fc12, fn12);
-        for (int n = 0; n <= paramb.n_max_radial; ++n) {
-          double gn12 = 0.0;
-          for (int k = 0; k <= paramb.basis_size_radial; ++k) {
-            int c_index = (n * (paramb.basis_size_radial + 1) + k) * paramb.num_types_sq;
-            c_index += t1 * paramb.num_types + t2;
-            gn12 += fn12[k] * annmb.c[c_index];
-          }
-          q[n] += gn12;
-        }
-      }
-#endif
-    }
-
-    for (int n = 0; n <= paramb.n_max_angular; ++n) {
-      double s[NUM_OF_ABC] = {0.0};
-      for (int i1 = 0; i1 < g_NN[n1]; ++i1) {
-        int n2 = g_NL[n1][i1];
-        double r12[3] = {
-          g_pos[n2][0] - g_pos[n1][0], g_pos[n2][1] - g_pos[n1][1], g_pos[n2][2] - g_pos[n1][2]};
-
-        double d12sq = r12[0] * r12[0] + r12[1] * r12[1] + r12[2] * r12[2];
-        if (d12sq >= paramb.rc_angular * paramb.rc_angular) {
-          continue;
-        }
-        double d12 = sqrt(d12sq);
-        int t2 = map_atom_type_idx[g_type[n2] - 1]; // from LAMMPS to NEP convention
-
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-        int index_left, index_right;
-        double weight_left, weight_right;
-        find_index_and_weight(
-          d12 * paramb.rcinv_angular, index_left, index_right, weight_left, weight_right);
-        int t12 = t1 * paramb.num_types + t2;
-        double gn12 =
-          g_gn_angular[(index_left * paramb.num_types_sq + t12) * (paramb.n_max_angular + 1) + n] *
-            weight_left +
-          g_gn_angular[(index_right * paramb.num_types_sq + t12) * (paramb.n_max_angular + 1) + n] *
-            weight_right;
-        accumulate_s(d12, r12[0], r12[1], r12[2], gn12, s);
-#else
-        double fc12;
-        find_fc(paramb.rc_angular, paramb.rcinv_angular, d12, fc12);
-
-        if (paramb.version == 2) {
-          double fn;
-          find_fn(n, paramb.rcinv_angular, d12, fc12, fn);
-          fn *=
-            (paramb.num_types == 1)
-              ? 1.0
-              : annmb.c
-                  [((paramb.n_max_radial + 1 + n) * paramb.num_types + t1) * paramb.num_types + t2];
-          accumulate_s(d12, r12[0], r12[1], r12[2], fn, s);
-        } else {
-          double fn12[MAX_NUM_N];
-          find_fn(paramb.basis_size_angular, paramb.rcinv_angular, d12, fc12, fn12);
-          double gn12 = 0.0;
-          for (int k = 0; k <= paramb.basis_size_angular; ++k) {
-            int c_index = (n * (paramb.basis_size_angular + 1) + k) * paramb.num_types_sq;
-            c_index += t1 * paramb.num_types + t2 + paramb.num_c_radial;
-            gn12 += fn12[k] * annmb.c[c_index];
-          }
-          accumulate_s(d12, r12[0], r12[1], r12[2], gn12, s);
-        }
-#endif
-      }
-      if (paramb.num_L == paramb.L_max) {
-        find_q(paramb.n_max_angular + 1, n, s, q + (paramb.n_max_radial + 1));
-      } else if (paramb.num_L == paramb.L_max + 1) {
-        find_q_with_4body(paramb.n_max_angular + 1, n, s, q + (paramb.n_max_radial + 1));
-      } else {
-        find_q_with_5body(paramb.n_max_angular + 1, n, s, q + (paramb.n_max_radial + 1));
-      }
-      for (int abc = 0; abc < NUM_OF_ABC; ++abc) {
-        g_sum_fxyz[(n * NUM_OF_ABC + abc) * nlocal + n1] = s[abc];
-      }
-    }
-
-    for (int d = 0; d < annmb.dim; ++d) {
-      q[d] = q[d] * paramb.q_scaler[d];
-      // std::cout << "scaler " << paramb.q_scaler[d] << " realq " <<  q[d] << std::endl;
-    }
-
-    double F = 0.0, Fp[MAX_DIM] = {0.0}, latent_space[MAX_NEURON] = {0.0};
-    apply_ann_one_layer(
-      annmb.dim, annmb.num_neurons1, annmb.w0[t1], annmb.b0[t1], annmb.w1[t1], annmb.b1, q, F, Fp,
-      latent_space, t1, paramb.version);
-
-    g_total_potential += F; // always calculate this
-    if (g_potential) {      // only calculate when required
-      g_potential[n1] = F;
-    }
-    for (int d = 0; d < annmb.dim; ++d) {
-      g_Fp[d * nlocal + n1] = Fp[d] * paramb.q_scaler[d];
-    }
-  }
-}
-
-void find_force_radial_for_lammps(
-  NEP3_CPU::ParaMB& paramb,
-  NEP3_CPU::ANN& annmb,
-  int nlocal,
-  int N,
-  int* g_ilist,
-  int* g_NN,
-  int** g_NL,
-  int* g_type,
-  std::vector<int> map_atom_type_idx,
-  double** g_pos,
-  double* g_Fp,
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-  const double* g_gnp_radial,
-#endif
-  double** g_force,
-  double g_total_virial[6],
-  double** g_virial,
-  int model_index)
-{
-  for (int ii = 0; ii < N; ++ii) {
-    int n1 = g_ilist[ii];
-    int t1 = map_atom_type_idx[g_type[n1] - 1]; // from LAMMPS to NEP convention
-    for (int i1 = 0; i1 < g_NN[n1]; ++i1) {
-      int n2 = g_NL[n1][i1];
-      int t2 = map_atom_type_idx[g_type[n2] - 1]; // from LAMMPS to NEP convention
-      double r12[3] = {
-        g_pos[n2][0] - g_pos[n1][0], g_pos[n2][1] - g_pos[n1][1], g_pos[n2][2] - g_pos[n1][2]};
-
-      double d12sq = r12[0] * r12[0] + r12[1] * r12[1] + r12[2] * r12[2];
-      if (d12sq >= paramb.rc_radial * paramb.rc_radial) {
-        continue;
-      }
-      double d12 = sqrt(d12sq);
-      double d12inv = 1.0 / d12;
-      double f12[3] = {0.0};
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-      int index_left, index_right;
-      double weight_left, weight_right;
-      find_index_and_weight(
-        d12 * paramb.rcinv_radial, index_left, index_right, weight_left, weight_right);
-      int t12 = t1 * paramb.num_types + t2;
-      for (int n = 0; n <= paramb.n_max_radial; ++n) {
-        double gnp12 =
-          g_gnp_radial[(index_left * paramb.num_types_sq + t12) * (paramb.n_max_radial + 1) + n] *
-            weight_left +
-          g_gnp_radial[(index_right * paramb.num_types_sq + t12) * (paramb.n_max_radial + 1) + n] *
-            weight_right;
-        double tmp12 = g_Fp[n1 + n * nlocal] * gnp12 * d12inv;
-        for (int d = 0; d < 3; ++d) {
-          f12[d] += tmp12 * r12[d];
-        }
-      }
-#else
-      double fc12, fcp12;
-      find_fc_and_fcp(paramb.rc_radial, paramb.rcinv_radial, d12, fc12, fcp12);
-      double fn12[MAX_NUM_N];
-      double fnp12[MAX_NUM_N];
-      if (paramb.version == 2) {
-        find_fn_and_fnp(paramb.n_max_radial, paramb.rcinv_radial, d12, fc12, fcp12, fn12, fnp12);
-        for (int n = 0; n <= paramb.n_max_radial; ++n) {
-          double tmp12 = g_Fp[n1 + n * nlocal] * fnp12[n] * d12inv;
-          tmp12 *= (paramb.num_types == 1)
-                     ? 1.0
-                     : annmb.c[(n * paramb.num_types + t1) * paramb.num_types + t2];
-          for (int d = 0; d < 3; ++d) {
-            f12[d] += tmp12 * r12[d];
-          }
-        }
-      } else {
-        find_fn_and_fnp(
-          paramb.basis_size_radial, paramb.rcinv_radial, d12, fc12, fcp12, fn12, fnp12);
-        for (int n = 0; n <= paramb.n_max_radial; ++n) {
-          double gnp12 = 0.0;
-          for (int k = 0; k <= paramb.basis_size_radial; ++k) {
-            int c_index = (n * (paramb.basis_size_radial + 1) + k) * paramb.num_types_sq;
-            c_index += t1 * paramb.num_types + t2;
-            gnp12 += fnp12[k] * annmb.c[c_index];
-          }
-          double tmp12 = g_Fp[n1 + n * nlocal] * gnp12 * d12inv;
-          for (int d = 0; d < 3; ++d) {
-            f12[d] += tmp12 * r12[d];
-          }
-        }
-      }
-#endif
-
-      g_force[n1][0] += f12[0];
-      g_force[n1][1] += f12[1];
-      g_force[n1][2] += f12[2];
-      g_force[n2][0] -= f12[0];
-      g_force[n2][1] -= f12[1];
-      g_force[n2][2] -= f12[2];
-
-      // always calculate the total virial:
-      g_total_virial[0] -= r12[0] * f12[0]; // xx
-      g_total_virial[1] -= r12[1] * f12[1]; // yy
-      g_total_virial[2] -= r12[2] * f12[2]; // zz
-      g_total_virial[3] -= r12[0] * f12[1]; // xy
-      g_total_virial[4] -= r12[0] * f12[2]; // xz
-      g_total_virial[5] -= r12[1] * f12[2]; // yz
-      if (g_virial and model_index==0) {                       // only calculate the per-atom virial when required, for multi models, only calculate the first model
-        g_virial[n2][0] -= r12[0] * f12[0]; // xx
-        g_virial[n2][1] -= r12[1] * f12[1]; // yy
-        g_virial[n2][2] -= r12[2] * f12[2]; // zz
-        g_virial[n2][3] -= r12[0] * f12[1]; // xy
-        g_virial[n2][4] -= r12[0] * f12[2]; // xz
-        g_virial[n2][5] -= r12[1] * f12[2]; // yz
-        g_virial[n2][6] -= r12[1] * f12[0]; // yx
-        g_virial[n2][7] -= r12[2] * f12[0]; // zx
-        g_virial[n2][8] -= r12[2] * f12[1]; // zy
-      }
-    }
-  }
-}
-
-void find_force_angular_for_lammps(
-  NEP3_CPU::ParaMB& paramb,
-  NEP3_CPU::ANN& annmb,
-  int nlocal,
-  int N,
-  int* g_ilist,
-  int* g_NN,
-  int** g_NL,
-  int* g_type,
-  std::vector<int> map_atom_type_idx,
-  double** g_pos,
-  double* g_Fp,
-  double* g_sum_fxyz,
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-  const double* g_gn_angular,
-  const double* g_gnp_angular,
-#endif
-  double** g_force,
-  double g_total_virial[6],
-  double** g_virial)
-{
-  for (int ii = 0; ii < N; ++ii) {
-    int n1 = g_ilist[ii];
-    double Fp[MAX_DIM_ANGULAR] = {0.0};
-    double sum_fxyz[NUM_OF_ABC * MAX_NUM_N];
-    for (int d = 0; d < paramb.dim_angular; ++d) {
-      Fp[d] = g_Fp[(paramb.n_max_radial + 1 + d) * nlocal + n1];
-    }
-    for (int d = 0; d < (paramb.n_max_angular + 1) * NUM_OF_ABC; ++d) {
-      sum_fxyz[d] = g_sum_fxyz[d * nlocal + n1];
-    }
-
-    int t1 = map_atom_type_idx[g_type[n1] - 1]; // from LAMMPS to NEP convention
-
-    for (int i1 = 0; i1 < g_NN[n1]; ++i1) {
-      int n2 = g_NL[n1][i1];
-      double r12[3] = {
-        g_pos[n2][0] - g_pos[n1][0], g_pos[n2][1] - g_pos[n1][1], g_pos[n2][2] - g_pos[n1][2]};
-
-      double d12sq = r12[0] * r12[0] + r12[1] * r12[1] + r12[2] * r12[2];
-      if (d12sq >= paramb.rc_angular * paramb.rc_angular) {
-        continue;
-      }
-      double d12 = sqrt(d12sq);
-      int t2 = map_atom_type_idx[g_type[n2] - 1]; // from LAMMPS to NEP convention
-      double f12[3] = {0.0};
-
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-      int index_left, index_right;
-      double weight_left, weight_right;
-      find_index_and_weight(
-        d12 * paramb.rcinv_angular, index_left, index_right, weight_left, weight_right);
-      int t12 = t1 * paramb.num_types + t2;
-      for (int n = 0; n <= paramb.n_max_angular; ++n) {
-        int index_left_all =
-          (index_left * paramb.num_types_sq + t12) * (paramb.n_max_angular + 1) + n;
-        int index_right_all =
-          (index_right * paramb.num_types_sq + t12) * (paramb.n_max_angular + 1) + n;
-        double gn12 =
-          g_gn_angular[index_left_all] * weight_left + g_gn_angular[index_right_all] * weight_right;
-        double gnp12 = g_gnp_angular[index_left_all] * weight_left +
-                       g_gnp_angular[index_right_all] * weight_right;
-        if (paramb.num_L == paramb.L_max) {
-          accumulate_f12(n, paramb.n_max_angular + 1, d12, r12, gn12, gnp12, Fp, sum_fxyz, f12);
-        } else if (paramb.num_L == paramb.L_max + 1) {
-          accumulate_f12_with_4body(
-            n, paramb.n_max_angular + 1, d12, r12, gn12, gnp12, Fp, sum_fxyz, f12);
-        } else {
-          accumulate_f12_with_5body(
-            n, paramb.n_max_angular + 1, d12, r12, gn12, gnp12, Fp, sum_fxyz, f12);
-        }
-      }
-#else
-      double fc12, fcp12;
-      find_fc_and_fcp(paramb.rc_angular, paramb.rcinv_angular, d12, fc12, fcp12);
-      if (paramb.version == 2) {
-        for (int n = 0; n <= paramb.n_max_angular; ++n) {
-          double fn;
-          double fnp;
-          find_fn_and_fnp(n, paramb.rcinv_angular, d12, fc12, fcp12, fn, fnp);
-          const double c =
-            (paramb.num_types == 1)
-              ? 1.0
-              : annmb.c
-                  [((paramb.n_max_radial + 1 + n) * paramb.num_types + t1) * paramb.num_types + t2];
-          fn *= c;
-          fnp *= c;
-          accumulate_f12(n, paramb.n_max_angular + 1, d12, r12, fn, fnp, Fp, sum_fxyz, f12);
-        }
-      } else {
-        double fn12[MAX_NUM_N];
-        double fnp12[MAX_NUM_N];
-        find_fn_and_fnp(
-          paramb.basis_size_angular, paramb.rcinv_angular, d12, fc12, fcp12, fn12, fnp12);
-        for (int n = 0; n <= paramb.n_max_angular; ++n) {
-          double gn12 = 0.0;
-          double gnp12 = 0.0;
-          for (int k = 0; k <= paramb.basis_size_angular; ++k) {
-            int c_index = (n * (paramb.basis_size_angular + 1) + k) * paramb.num_types_sq;
-            c_index += t1 * paramb.num_types + t2 + paramb.num_c_radial;
-            gn12 += fn12[k] * annmb.c[c_index];
-            gnp12 += fnp12[k] * annmb.c[c_index];
-          }
-          if (paramb.num_L == paramb.L_max) {
-            accumulate_f12(n, paramb.n_max_angular + 1, d12, r12, gn12, gnp12, Fp, sum_fxyz, f12);
-          } else if (paramb.num_L == paramb.L_max + 1) {
-            accumulate_f12_with_4body(
-              n, paramb.n_max_angular + 1, d12, r12, gn12, gnp12, Fp, sum_fxyz, f12);
-          } else {
-            accumulate_f12_with_5body(
-              n, paramb.n_max_angular + 1, d12, r12, gn12, gnp12, Fp, sum_fxyz, f12);
-          }
-        }
-      }
-#endif
-
-      g_force[n1][0] += f12[0];
-      g_force[n1][1] += f12[1];
-      g_force[n1][2] += f12[2];
-      g_force[n2][0] -= f12[0];
-      g_force[n2][1] -= f12[1];
-      g_force[n2][2] -= f12[2];
-      // always calculate the total virial:
-      g_total_virial[0] -= r12[0] * f12[0]; // xx
-      g_total_virial[1] -= r12[1] * f12[1]; // yy
-      g_total_virial[2] -= r12[2] * f12[2]; // zz
-      g_total_virial[3] -= r12[0] * f12[1]; // xy
-      g_total_virial[4] -= r12[0] * f12[2]; // xz
-      g_total_virial[5] -= r12[1] * f12[2]; // yz
-      if (g_virial) {                       // only calculate the per-atom virial when required
-        g_virial[n2][0] -= r12[0] * f12[0]; // xx
-        g_virial[n2][1] -= r12[1] * f12[1]; // yy
-        g_virial[n2][2] -= r12[2] * f12[2]; // zz
-        g_virial[n2][3] -= r12[0] * f12[1]; // xy
-        g_virial[n2][4] -= r12[0] * f12[2]; // xz
-        g_virial[n2][5] -= r12[1] * f12[2]; // yz
-        g_virial[n2][6] -= r12[1] * f12[0]; // yx
-        g_virial[n2][7] -= r12[2] * f12[0]; // zx
-        g_virial[n2][8] -= r12[2] * f12[1]; // zy
-      }
-    }
-  }
-}
-
-void find_force_ZBL_for_lammps(
-  const NEP3_CPU::ZBL& zbl,
-  int N,
-  int* g_ilist,
-  int* g_NN,
-  int** g_NL,
-  int* g_type,
-  std::vector<int> map_atom_type_idx,
-  double** g_pos,
-  double** g_force,
-  double g_total_virial[6],
-  double** g_virial,
-  double& g_total_potential,
-  double* g_potential)
-{
-  for (int ii = 0; ii < N; ++ii) {
-    int n1 = g_ilist[ii];
-    int type1 = map_atom_type_idx[g_type[n1] - 1];
-    double zi = zbl.atomic_numbers[type1]; // from LAMMPS to NEP convention
-    double pow_zi = pow(zi, 0.23);
-    for (int i1 = 0; i1 < g_NN[n1]; ++i1) {
-      int n2 = g_NL[n1][i1];
-      double r12[3] = {
-        g_pos[n2][0] - g_pos[n1][0], g_pos[n2][1] - g_pos[n1][1], g_pos[n2][2] - g_pos[n1][2]};
-
-      double d12sq = r12[0] * r12[0] + r12[1] * r12[1] + r12[2] * r12[2];
-      double max_rc_outer = 2.5;
-      if (d12sq >= max_rc_outer * max_rc_outer) {
-        continue;
-      }
-      double d12 = sqrt(d12sq);
-      double d12inv = 1.0 / d12;
-      double f, fp;
-      int type2 = map_atom_type_idx[g_type[n2] - 1];
-      double zj = zbl.atomic_numbers[type2]; // from LAMMPS to NEP convention
-      double a_inv = (pow_zi + pow(zj, 0.23)) * 2.134563;
-      double zizj = K_C_SP * zi * zj;
-      if (zbl.flexibled) {
-        int t1, t2;
-        if (type1 < type2) {
-          t1 = type1;
-          t2 = type2;
-        } else {
-          t1 = type2;
-          t2 = type1;
-        }
-        int zbl_index = t1 * zbl.num_types - (t1 * (t1 - 1)) / 2 + (t2 - t1);
-        double ZBL_para[10];
-        for (int i = 0; i < 10; ++i) {
-          ZBL_para[i] = zbl.para[10 * zbl_index + i];
-        }
-        find_f_and_fp_zbl(ZBL_para, zizj, a_inv, d12, d12inv, f, fp);
-      } else {
-        find_f_and_fp_zbl(zizj, a_inv, zbl.rc_inner, zbl.rc_outer, d12, d12inv, f, fp);
-      }
-      double f2 = fp * d12inv * 0.5;
-      double f12[3] = {r12[0] * f2, r12[1] * f2, r12[2] * f2};
-      g_force[n1][0] += f12[0]; // accumulation here
-      g_force[n1][1] += f12[1];
-      g_force[n1][2] += f12[2];
-      g_force[n2][0] -= f12[0];
-      g_force[n2][1] -= f12[1];
-      g_force[n2][2] -= f12[2];
-      // always calculate the total virial:
-      g_total_virial[0] -= r12[0] * f12[0]; // xx
-      g_total_virial[1] -= r12[1] * f12[1]; // yy
-      g_total_virial[2] -= r12[2] * f12[2]; // zz
-      g_total_virial[3] -= r12[0] * f12[1]; // xy
-      g_total_virial[4] -= r12[0] * f12[2]; // xz
-      g_total_virial[5] -= r12[1] * f12[2]; // yz
-      if (g_virial) {                       // only calculate the per-atom virial when required
-        g_virial[n2][0] -= r12[0] * f12[0]; // xx
-        g_virial[n2][1] -= r12[1] * f12[1]; // yy
-        g_virial[n2][2] -= r12[2] * f12[2]; // zz
-        g_virial[n2][3] -= r12[0] * f12[1]; // xy
-        g_virial[n2][4] -= r12[0] * f12[2]; // xz
-        g_virial[n2][5] -= r12[1] * f12[2]; // yz
-        g_virial[n2][6] -= r12[1] * f12[0]; // yx
-        g_virial[n2][7] -= r12[2] * f12[0]; // zx
-        g_virial[n2][8] -= r12[2] * f12[1]; // zy
-      }
-      g_total_potential += f * 0.5; // always calculate this
-      if (g_potential) {            // only calculate when required
-        g_potential[n1] += f * 0.5;
-      }
     }
   }
 }
@@ -2118,7 +1450,7 @@ void apply_mic_small_box(const double* ebox, double& x12, double& y12, double& z
   z12 = ebox[6] * sx12 + ebox[7] * sy12 + ebox[8] * sz12;
 }
 
-void find_neighbor_compute(
+void find_neighbor(
   const double rc_radial,
   const double rc_angular,
   const int N,
@@ -2205,7 +1537,7 @@ void find_neighbor_compute(
   // std::abort();
 }
 
-void find_neighbor_list_small_box(
+void find_neighbor_with_atomtype(
   const double rc_radial,
   const double rc_angular,
   const int N,
@@ -2382,12 +1714,12 @@ double get_double_from_token(const std::string& token, const char* filename, con
 }
 } // namespace
 
-NEP3_CPU::NEP3_CPU() {
+NEP_CPU::NEP_CPU() {
 
 }
 
 
-void NEP3_CPU::init_from_file(const std::string& potential_filename, const bool is_rank_0)
+void NEP_CPU::init_from_file(const std::string& potential_filename, const bool is_rank_0)
 {
   int neplinenums = countNonEmptyLines(potential_filename);
 
@@ -2397,7 +1729,7 @@ void NEP3_CPU::init_from_file(const std::string& potential_filename, const bool 
     exit(1);
   }
 
-  // nep3 1 C
+  // nep 1 C
   std::vector<std::string> tokens = get_tokens(input);
   if (tokens.size() < 3) {
     print_tokens(tokens);
@@ -2483,7 +1815,6 @@ void NEP3_CPU::init_from_file(const std::string& potential_filename, const bool 
     }
     element_atomic_number_list[n] = atomic_number;
     zbl.atomic_numbers[n] = atomic_number;
-    dftd3.atomic_number[n] = atomic_number - 1;
   }
 
   // zbl 0.7 1.4
@@ -2672,10 +2003,6 @@ void NEP3_CPU::init_from_file(const std::string& potential_filename, const bool 
   }
   input.close();
 
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-  construct_table(parameters.data());
-#endif
-
   // only report for rank_0
   if (is_rank_0) {
 
@@ -2730,14 +2057,14 @@ void NEP3_CPU::init_from_file(const std::string& potential_filename, const bool 
   }
 }
 
-NEP3_CPU::NEP3_CPU(const std::string& potential_filename) { init_from_file(potential_filename, true); }
+NEP_CPU::NEP_CPU(const std::string& potential_filename) { init_from_file(potential_filename, true); }
 
 
-void NEP3_CPU::update_potential(double* parameters, ANN& ann)
+void NEP_CPU::update_potential(double* parameters, ANN& ann)
 {
   double* pointer = parameters;
   for (int t = 0; t < paramb.num_types; ++t) {
-    if (t > 0 && paramb.version == 3) { // Use the same set of NN parameters for NEP2 and NEP3_CPU
+    if (t > 0 && paramb.version == 3) { // Use the same set of NN parameters for NEP2 and NEP_CPU
       pointer -= (ann.dim + 2) * ann.num_neurons1;
     }
     ann.w0[t] = pointer;
@@ -2758,7 +2085,7 @@ void NEP3_CPU::update_potential(double* parameters, ANN& ann)
   // }
   if (paramb.model_type == 2) {
     for (int t = 0; t < paramb.num_types; ++t) {
-      if (t > 0 && paramb.version != 4) { // Use the same set of NN parameters for NEP2 and NEP3_CPU
+      if (t > 0 && paramb.version != 4) { // Use the same set of NN parameters for NEP2 and NEP_CPU
         pointer -= (ann.dim + 2) * ann.num_neurons1;
       }
       ann.w0_pol[t] = pointer;
@@ -2775,28 +2102,7 @@ void NEP3_CPU::update_potential(double* parameters, ANN& ann)
   ann.c = pointer;
 }
 
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-void NEP3_CPU::construct_table(double* parameters)
-{
-  gn_radial.resize(table_length * paramb.num_types_sq * (paramb.n_max_radial + 1));
-  gnp_radial.resize(table_length * paramb.num_types_sq * (paramb.n_max_radial + 1));
-  gn_angular.resize(table_length * paramb.num_types_sq * (paramb.n_max_angular + 1));
-  gnp_angular.resize(table_length * paramb.num_types_sq * (paramb.n_max_angular + 1));
-  double* c_pointer =
-    parameters +
-    (annmb.dim + 2) * annmb.num_neurons1 * (paramb.version == 4 ? paramb.num_types : 1) + 1;
-  construct_table_radial_or_angular(
-    paramb.version, paramb.num_types, paramb.num_types_sq, paramb.n_max_radial,
-    paramb.basis_size_radial, paramb.rc_radial, paramb.rcinv_radial, c_pointer, gn_radial.data(),
-    gnp_radial.data());
-  construct_table_radial_or_angular(
-    paramb.version, paramb.num_types, paramb.num_types_sq, paramb.n_max_angular,
-    paramb.basis_size_angular, paramb.rc_angular, paramb.rcinv_angular,
-    c_pointer + paramb.num_c_radial, gn_angular.data(), gnp_angular.data());
-}
-#endif
-
-void NEP3_CPU::allocate_memory(const int N)
+void NEP_CPU::allocate_memory(const int N)
 {
   if (num_atoms < N) {
     NN_radial.resize(N);
@@ -2806,14 +2112,11 @@ void NEP3_CPU::allocate_memory(const int N)
     r12.resize(N * MN * 6);
     Fp.resize(N * annmb.dim);
     sum_fxyz.resize(N * (paramb.n_max_angular + 1) * NUM_OF_ABC);
-    dftd3.cn.resize(N);
-    dftd3.dc6_sum.resize(N);
-    dftd3.dc8_sum.resize(N);
     num_atoms = N;
   }
 }
 
-void NEP3_CPU::compute(
+void NEP_CPU::compute(
   const std::vector<int>& type,
   const std::vector<double>& box,
   const std::vector<double>& position,
@@ -2859,7 +2162,7 @@ void NEP3_CPU::compute(
   //   printf("p[%d]= %f %f %f \n",i, position[i], position[N+i], position[2*N+i]);
   // }
 
-  find_neighbor_compute(
+  find_neighbor(
     paramb.rc_radial, paramb.rc_angular, N, MN, box, position, num_cells, ebox, 
     NN_radial, NL_radial, NN_angular, NL_angular, 
     r12);
@@ -2870,22 +2173,16 @@ void NEP3_CPU::compute(
   //   }
   //   printf("\n");
   // }
-  find_descriptor_small_box(
+  find_descriptor(
     true, false, false, false, paramb, annmb, N, NN_radial.data(), NL_radial.data(),
     NN_angular.data(), NL_angular.data(), type.data(), r12.data(), r12.data() + size_x12,
     r12.data() + size_x12 * 2, r12.data() + size_x12 * 3, r12.data() + size_x12 * 4,
     r12.data() + size_x12 * 5,
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-    gn_radial.data(), gn_angular.data(),
-#endif
     Fp.data(), sum_fxyz.data(), potential.data(), nullptr, nullptr, nullptr);
 
-  find_force_radial_small_box(
+  find_force_radial(
     false, paramb, annmb, N, NN_radial.data(), NL_radial.data(), type.data(), r12.data(),
     r12.data() + size_x12, r12.data() + size_x12 * 2, Fp.data(),
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-    gnp_radial.data(),
-#endif
     force.data(), force.data() + N, force.data() + N * 2, nullptr, total_virial.data());
   // for (int ii = 0; ii < N; ii++) {
   // printf("radial force f[%d]=%f %f %f\n", ii, force[ii], force[ii + N], force[ii + N * 2]);
@@ -2894,20 +2191,17 @@ void NEP3_CPU::compute(
   //   printf("radial force[%d]=%f %f %f\n", ii, force[ii], force[ii+ N], force[ii+ N*2]);
   // }
 
-  find_force_angular_small_box(
+  find_force_angular(
     false, paramb, annmb, N, NN_angular.data(), NL_angular.data(), type.data(),
     r12.data() + size_x12 * 3, r12.data() + size_x12 * 4, r12.data() + size_x12 * 5, Fp.data(),
     sum_fxyz.data(),
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-    gn_angular.data(), gnp_angular.data(),
-#endif
     force.data(), force.data() + N, force.data() + N * 2, nullptr, total_virial.data());
 
   // for (int ii = 0; ii < N; ii++) {
   // printf("angular force f[%d]=%f %f %f\n", ii, force[ii], force[ii + N], force[ii + N * 2]);
   // }
   if (zbl.enabled) {
-    find_force_ZBL_small_box(
+    find_force_ZBL(
       N, zbl, NN_angular.data(), NL_angular.data(), type.data(), r12.data() + size_x12 * 3,
       r12.data() + size_x12 * 4, r12.data() + size_x12 * 5, force.data(), force.data() + N,
       force.data() + N * 2, nullptr, potential.data(), total_virial.data());
@@ -2923,147 +2217,7 @@ void NEP3_CPU::compute(
   total_virial[7] = total_virial[5]; //zy
 }
 
-void NEP3_CPU::compute_for_lammps(
-  int nlocal,
-  int N,
-  int* ilist,
-  int* NN,
-  int** NL,
-  int* type,
-  double** pos,
-  double& total_potential,
-  double total_virial[6],
-  double* potential,
-  double** force,
-  double** virial,
-  int model_index)
-{
-  if (num_atoms < nlocal) {//num_atoms is 0,so the num_atoms = nlocal
-    Fp.resize(nlocal * annmb.dim);
-    sum_fxyz.resize(nlocal * (paramb.n_max_angular + 1) * NUM_OF_ABC);
-    num_atoms = nlocal;
-  }
-  find_descriptor_for_lammps(
-    paramb, annmb, nlocal, N, ilist, NN, NL, type, map_atom_type_idx, pos,
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-    gn_radial.data(), gn_angular.data(),
-#endif
-    Fp.data(), sum_fxyz.data(), total_potential, potential);
-  find_force_radial_for_lammps( 
-    paramb, annmb, nlocal, N, ilist, NN, NL, type, map_atom_type_idx, pos, Fp.data(),
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-    gnp_radial.data(),
-#endif
-    force, total_virial, virial, model_index);
-  find_force_angular_for_lammps(
-    paramb, annmb, nlocal, N, ilist, NN, NL, type, map_atom_type_idx, pos, Fp.data(), sum_fxyz.data(),
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-    gn_angular.data(), gnp_angular.data(),
-#endif
-    force, total_virial, virial);
-  if (zbl.enabled) {
-    find_force_ZBL_for_lammps(
-      zbl, N, ilist, NN, NL, type, map_atom_type_idx,  pos, force, total_virial, virial, total_potential, potential);
-  }
-}
-
-bool NEP3_CPU::set_dftd3_para_one(
-  const std::string& functional_input,
-  const std::string& functional_library,
-  const double s6,
-  const double a1,
-  const double s8,
-  const double a2)
-{
-  if (functional_input == functional_library) {
-    dftd3.s6 = s6;
-    dftd3.a1 = a1;
-    dftd3.s8 = s8;
-    dftd3.a2 = a2 * Bohr;
-    return true;
-  }
-  return false;
-}
-
-void NEP3_CPU::set_dftd3_para_all(
-  const std::string& functional_input,
-  const double rc_potential,
-  const double rc_coordination_number)
-{
-
-  dftd3.rc_radial = rc_potential;
-  dftd3.rc_angular = rc_coordination_number;
-
-  std::string functional = functional_input;
-  std::transform(functional.begin(), functional.end(), functional.begin(), [](unsigned char c) {
-    return std::tolower(c);
-  });
-
-  bool valid = false;
-  valid = valid || set_dftd3_para_one(functional, "b1b95", 1.000, 0.2092, 1.4507, 5.5545);
-  valid = valid || set_dftd3_para_one(functional, "b2gpplyp", 0.560, 0.0000, 0.2597, 6.3332);
-  valid = valid || set_dftd3_para_one(functional, "b2plyp", 0.640, 0.3065, 0.9147, 5.0570);
-  valid = valid || set_dftd3_para_one(functional, "b3lyp", 1.000, 0.3981, 1.9889, 4.4211);
-  valid = valid || set_dftd3_para_one(functional, "b3pw91", 1.000, 0.4312, 2.8524, 4.4693);
-  valid = valid || set_dftd3_para_one(functional, "b97d", 1.000, 0.5545, 2.2609, 3.2297);
-  valid = valid || set_dftd3_para_one(functional, "bhlyp", 1.000, 0.2793, 1.0354, 4.9615);
-  valid = valid || set_dftd3_para_one(functional, "blyp", 1.000, 0.4298, 2.6996, 4.2359);
-  valid = valid || set_dftd3_para_one(functional, "bmk", 1.000, 0.1940, 2.0860, 5.9197);
-  valid = valid || set_dftd3_para_one(functional, "bop", 1.000, 0.4870, 3.295, 3.5043);
-  valid = valid || set_dftd3_para_one(functional, "bp86", 1.000, 0.3946, 3.2822, 4.8516);
-  valid = valid || set_dftd3_para_one(functional, "bpbe", 1.000, 0.4567, 4.0728, 4.3908);
-  valid = valid || set_dftd3_para_one(functional, "camb3lyp", 1.000, 0.3708, 2.0674, 5.4743);
-  valid = valid || set_dftd3_para_one(functional, "dsdblyp", 0.500, 0.0000, 0.2130, 6.0519);
-  valid = valid || set_dftd3_para_one(functional, "hcth120", 1.000, 0.3563, 1.0821, 4.3359);
-  valid = valid || set_dftd3_para_one(functional, "hf", 1.000, 0.3385, 0.9171, 2.883);
-  valid = valid || set_dftd3_para_one(functional, "hse-hjs", 1.000, 0.3830, 2.3100, 5.685);
-  valid = valid || set_dftd3_para_one(functional, "lc-wpbe08", 1.000, 0.3919, 1.8541, 5.0897);
-  valid = valid || set_dftd3_para_one(functional, "lcwpbe", 1.000, 0.3919, 1.8541, 5.0897);
-  valid = valid || set_dftd3_para_one(functional, "m11", 1.000, 0.0000, 2.8112, 10.1389);
-  valid = valid || set_dftd3_para_one(functional, "mn12l", 1.000, 0.0000, 2.2674, 9.1494);
-  valid = valid || set_dftd3_para_one(functional, "mn12sx", 1.000, 0.0983, 1.1674, 8.0259);
-  valid = valid || set_dftd3_para_one(functional, "mpw1b95", 1.000, 0.1955, 1.0508, 6.4177);
-  valid = valid || set_dftd3_para_one(functional, "mpwb1k", 1.000, 0.1474, 0.9499, 6.6223);
-  valid = valid || set_dftd3_para_one(functional, "mpwlyp", 1.000, 0.4831, 2.0077, 4.5323);
-  valid = valid || set_dftd3_para_one(functional, "n12sx", 1.000, 0.3283, 2.4900, 5.7898);
-  valid = valid || set_dftd3_para_one(functional, "olyp", 1.000, 0.5299, 2.6205, 2.8065);
-  valid = valid || set_dftd3_para_one(functional, "opbe", 1.000, 0.5512, 3.3816, 2.9444);
-  valid = valid || set_dftd3_para_one(functional, "otpss", 1.000, 0.4634, 2.7495, 4.3153);
-  valid = valid || set_dftd3_para_one(functional, "pbe", 1.000, 0.4289, 0.7875, 4.4407);
-  valid = valid || set_dftd3_para_one(functional, "pbe0", 1.000, 0.4145, 1.2177, 4.8593);
-  valid = valid || set_dftd3_para_one(functional, "pbe38", 1.000, 0.3995, 1.4623, 5.1405);
-  valid = valid || set_dftd3_para_one(functional, "pbesol", 1.000, 0.4466, 2.9491, 6.1742);
-  valid = valid || set_dftd3_para_one(functional, "ptpss", 0.750, 0.000, 0.2804, 6.5745);
-  valid = valid || set_dftd3_para_one(functional, "pw6b95", 1.000, 0.2076, 0.7257, 6.375);
-  valid = valid || set_dftd3_para_one(functional, "pwb6k", 1.000, 0.1805, 0.9383, 7.7627);
-  valid = valid || set_dftd3_para_one(functional, "pwpb95", 0.820, 0.0000, 0.2904, 7.3141);
-  valid = valid || set_dftd3_para_one(functional, "revpbe", 1.000, 0.5238, 2.3550, 3.5016);
-  valid = valid || set_dftd3_para_one(functional, "revpbe0", 1.000, 0.4679, 1.7588, 3.7619);
-  valid = valid || set_dftd3_para_one(functional, "revpbe38", 1.000, 0.4309, 1.4760, 3.9446);
-  valid = valid || set_dftd3_para_one(functional, "revssb", 1.000, 0.4720, 0.4389, 4.0986);
-  valid = valid || set_dftd3_para_one(functional, "rpbe", 1.000, 0.1820, 0.8318, 4.0094);
-  valid = valid || set_dftd3_para_one(functional, "rpw86pbe", 1.000, 0.4613, 1.3845, 4.5062);
-  valid = valid || set_dftd3_para_one(functional, "scan", 1.000, 0.5380, 0.0000, 5.42);
-  valid = valid || set_dftd3_para_one(functional, "sogga11x", 1.000, 0.1330, 1.1426, 5.7381);
-  valid = valid || set_dftd3_para_one(functional, "ssb", 1.000, -0.0952, -0.1744, 5.2170);
-  valid = valid || set_dftd3_para_one(functional, "tpss", 1.000, 0.4535, 1.9435, 4.4752);
-  valid = valid || set_dftd3_para_one(functional, "tpss0", 1.000, 0.3768, 1.2576, 4.5865);
-  valid = valid || set_dftd3_para_one(functional, "tpssh", 1.000, 0.4529, 2.2382, 4.6550);
-  valid = valid || set_dftd3_para_one(functional, "b2kplyp", 0.64, 0.0000, 0.1521, 7.1916);
-  valid = valid || set_dftd3_para_one(functional, "dsd-pbep86", 0.418, 0.0000, 0.0000, 5.6500);
-  valid = valid || set_dftd3_para_one(functional, "b97m", 1.0000, -0.0780, 0.1384, 5.5946);
-  valid = valid || set_dftd3_para_one(functional, "wb97x", 1.0000, 0.0000, 0.2641, 5.4959);
-  valid = valid || set_dftd3_para_one(functional, "wb97m", 1.0000, 0.5660, 0.3908, 3.1280);
-
-  if (!valid) {
-    std::cout << "The " << functional
-              << " functional is not supported for DFT-D3 with BJ damping.\n"
-              << std::endl;
-    exit(1);
-  }
-};
-
-void NEP3_CPU::find_neigh(
+void NEP_CPU::find_neigh(
   const double rc_radial,
   const double rc_angular,
   const int MN,
@@ -3092,6 +2246,6 @@ void NEP3_CPU::find_neigh(
   r12_radial.assign(N * MN * 4, 0);
   r12_angular.assign(N * MN * 4, 0);
   
-  find_neighbor_list_small_box(
+  find_neighbor_with_atomtype(
     rc_radial, rc_angular, N, MN, atom_type_map, box, position, num_cells, ebox, NN_radial, NL_radial, NLT_radial, NN_angular, NL_angular, NLT_angular, r12_radial, r12_angular);
 }

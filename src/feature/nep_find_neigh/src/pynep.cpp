@@ -68,7 +68,7 @@ class FindNeigh
     void allocate_memory(const int N);
     void init_model(const std::string& potential_filename);
   // private:
-    NEP3_CPU calc;
+    NEP_CPU calc;
     DP_CPU  calc_dp;
     int num_atoms = 0;
     
@@ -79,7 +79,7 @@ class FindNeigh
 
 };
 
-FindNeigh::FindNeigh(): calc(NEP3_CPU()), calc_dp(DP_CPU()) {}
+FindNeigh::FindNeigh(): calc(NEP_CPU()), calc_dp(DP_CPU()) {}
 
 void FindNeigh::init_model(const std::string& potential_filename) {
   calc.init_from_file(potential_filename, true);

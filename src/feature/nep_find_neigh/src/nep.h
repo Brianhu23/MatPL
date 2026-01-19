@@ -39,9 +39,7 @@ heat transport, Phys. Rev. B. 104, 104309 (2021).
 #include <string>
 #include <vector>
 
-// #define USE_TABLE_FOR_RADIAL_FUNCTIONS
-
-class NEP3_CPU
+class NEP_CPU
 {
 public:
   struct ParaMB {
@@ -94,21 +92,8 @@ public:
     double para[550];
   };
 
-  struct DFTD3 {
-    double s6 = 0.0;
-    double s8 = 0.0;
-    double a1 = 0.0;
-    double a2 = 0.0;
-    double rc_radial = 20.0;
-    double rc_angular = 10.0;
-    int atomic_number[94]; // H to Pu
-    std::vector<double> cn;
-    std::vector<double> dc6_sum;
-    std::vector<double> dc8_sum;
-  };
-
-  NEP3_CPU();
-  NEP3_CPU(const std::string& potential_filename);
+  NEP_CPU();
+  NEP_CPU(const std::string& potential_filename);
 
   void init_from_file(const std::string& potential_filename, const bool is_rank_0);
 
@@ -139,26 +124,9 @@ public:
     std::vector<double>& virial,
     std::vector<double>&  total_virial);
 
-  void compute_for_lammps(
-    int nlocal,              // list->nlocal
-    int inum,                // list->inum
-    int* ilist,              // list->ilist
-    int* numneigh,           // list->numneigh
-    int** firstneigh,        // list->firstneigh
-    int* type,               // atom->type
-    double** x,              // atom->x
-    double& total_potential, // total potential energy for the current processor
-    double total_virial[6],  // total virial for the current processor
-    double* potential,       // eatom or nullptr
-    double** f,              // atom->f
-    double** virial,          // cvatom or nullptr
-    int model_index          // for multimodels' deviation
-  );
-
   ParaMB paramb;
   ANN annmb;
   ZBL zbl;
-  DFTD3 dftd3;
 
   int num_atoms = 0;
   int num_cells[3];
@@ -179,25 +147,4 @@ public:
             
   void update_potential(double* parameters, ANN& ann);
   void allocate_memory(const int N);
-
-#ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
-  std::vector<double> gn_radial;   // tabulated gn_radial functions
-  std::vector<double> gnp_radial;  // tabulated gnp_radial functions
-  std::vector<double> gn_angular;  // tabulated gn_angular functions
-  std::vector<double> gnp_angular; // tabulated gnp_angular functions
-  void construct_table(double* parameters);
-#endif
-
-  bool set_dftd3_para_one(
-    const std::string& functional_input,
-    const std::string& functional_library,
-    const double s6,
-    const double a1,
-    const double s8,
-    const double a2);
-  void set_dftd3_para_all(
-    const std::string& functional_input,
-    const double rc_potential,
-    const double rc_coordination_number);
-
 };

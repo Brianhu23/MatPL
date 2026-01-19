@@ -1,8 +1,4 @@
 /*
-This code is developed based on the GPUMD source code and adds ghost atom processing in LAMMPS. 
-  Support multi GPUs.
-  Support GPUMD NEP shared bias and PWMLFF NEP independent bias forcefield.
-
 We have made the following improvements based on NEP4
 http://doc.lonxun.com/MatPL/models/nep/
 */
@@ -43,7 +39,7 @@ struct LMP_Data  {
   GPU_Vector<double> position;
 };
 
-struct NEP3_Data {
+struct NEP_Data {
   GPU_Vector<float> f12x; // 3-body or manybody partial forces
   GPU_Vector<float> f12y; // 3-body or manybody partial forces
   GPU_Vector<float> f12z; // 3-body or manybody partial forces
@@ -71,19 +67,13 @@ struct NEP3_Data {
   std::vector<double> cpu_virial_per_atom;
   std::vector<double> cpu_total_virial;
 
-#ifdef USE_TABLE
-  GPU_Vector<float> gn_radial;   // tabulated gn_radial functions
-  GPU_Vector<float> gnp_radial;  // tabulated gnp_radial functions
-  GPU_Vector<float> gn_angular;  // tabulated gn_angular functions
-  GPU_Vector<float> gnp_angular; // tabulated gnp_angular functions
-#endif
 };
 
-class NEP3
+class NEP
 {
 public:
   struct ParaMB {
-    int version = 2; // NEP version, 2 for NEP2 and 3 for NEP3
+    int version = 2; // NEP version, 2 for NEP2 and 3 for NEP
     int model_type = 0; // 0=potential, 1=dipole, 2=polarizability, 3=temperature-dependent free energy
     float rc_radial = 0.0f;     // radial cutoff
     float rc_angular = 0.0f;    // angular cutoff
@@ -138,17 +128,17 @@ public:
     double h[18];
   };
 
-  NEP3();
+  NEP();
   void init_from_file(const char* file_potential, const bool is_rank_0, const int in_device_id);
 
-  ~NEP3(void);
+  ~NEP(void);
 
   ParaMB paramb;
   ANN annmb;
   ZBL zbl;
   Box box;
   ExpandedBox ebox;
-  NEP3_Data nep_data;
+  NEP_Data nep_data;
   LMP_Data lmp_data;
   std::vector<int> map_atom_type_idx;
   std::vector<int> element_atomic_number_list;
@@ -161,9 +151,7 @@ public:
   void rest_nep_data(int max_atom_nums);
 
   void checkMemoryUsage(int sgin=0);
-#ifdef USE_TABLE
-  void construct_table(float* parameters);
-#endif
+
   void inference(
     int N, //atom nums
     int* itype_cpu, //atoms' type,the len is [n_all]

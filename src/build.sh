@@ -129,7 +129,7 @@ if command -v nvcc >/dev/null 2>&1 || [ -n "$CUDA_HOME" ] || [ -n "$CUDA_PATH" ]
         mkdir -p "$NEP_GPU_DIR/build"
         cd "$NEP_GPU_DIR/build"
         if cmake -Dpybind11_DIR=$(python -m pybind11 --cmakedir) .. && $MAKE_CMD; then
-            cp nep3_module*.so nep_gpu.so 2>/dev/null
+            cp nep_module*.so nep_gpu.so 2>/dev/null
         else
             echo "Warning: Failed to build NEP-GPU interface"
         fi
