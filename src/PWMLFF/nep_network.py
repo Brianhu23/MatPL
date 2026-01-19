@@ -34,7 +34,7 @@ from src.model.nep_net import NEP
 from src.optimizer.GKF import GKFOptimizer
 from src.optimizer.LKF import LKFOptimizer
 
-from src.pre_data.nep_data_loader import calculate_neighbor_num_max_min, calculate_neighbor_scaler, UniDataset, variable_length_collate_fn, type_map, NepTestData
+from src.pre_data.nep_data_loader import calculate_neighbor_num_max_min, calculate_neighbor_scaler, UniDataset, variable_length_collate_fn, variable_length_collate_fn_limit_mem, type_map, NepTestData
 from src.PWMLFF.nep_mods.nep_trainer import train_KF, train, valid, save_checkpoint, predict
 from src.PWMLFF.dp_param_extract import load_atomtype_energyshift_from_checkpoint
 from src.user.input_param import InputParam
@@ -120,7 +120,8 @@ class nep_network:
                 train_dataset,
                 batch_size=self.input_param.optimizer_param.batch_size,
                 shuffle=self.input_param.data_shuffle,
-                collate_fn= variable_length_collate_fn, 
+                # collate_fn= variable_length_collate_fn,
+                collate_fn=lambda batch: variable_length_collate_fn_limit_mem(batch, batch_max_types=self.input_param.max_allow_atom_type), 
                 num_workers=self.input_param.workers,   
                 drop_last=True,
                 pin_memory=True,
@@ -315,21 +316,12 @@ class nep_network:
         model, optimizer, scheduler = self.load_model_optimizer(energy_shift, avg_atom_num=1, iterations=len(train_loader)) #train_datset.avg_image_atom
         
 
-        max_NN_radial, min_NN_radial, max_NN_angular, min_NN_angular = \
-                        calculate_neighbor_num_max_min(dataset=train_datset, device = self.device, num_workers=self.input_param.workers)
+        # max_NN_radial, min_NN_radial, max_NN_angular, min_NN_angular = \
+        #                 calculate_neighbor_num_max_min(dataset=train_datset, device = self.device, num_workers=self.input_param.workers)
         
-        if self.input_param.nep_param.max_nn_from_txt:
-            model.max_NN_radial  = max(self.input_param.nep_param.max_NN_radial, max_NN_radial)
-            model.max_NN_angular = max(self.input_param.nep_param.max_NN_angular, max_NN_angular)
-        else:
-            model.max_NN_radial = max(model.max_NN_radial, max_NN_radial)
-            model.max_NN_angular = max(model.max_NN_angular, max_NN_angular)
-
         if model.q_scaler is None:
-            q_scaler = calculate_neighbor_scaler(
+            q_scaler, max_NN_radial, min_NN_radial, max_NN_angular, min_NN_angular = calculate_neighbor_scaler(
                             train_datset,
-                            model.max_NN_radial,
-                            model.max_NN_angular,
                             model.n_max_radial,
                             model.n_base_radial,
                             model.n_max_angular,
@@ -341,6 +333,15 @@ class nep_network:
                             num_workers=self.input_param.workers)
 
             model.reset_scaler(q_scaler, self.training_type, self.device)
+        else:
+            max_NN_radial, min_NN_radial, max_NN_angular, min_NN_angular = 0, 1e10, 0, 1e10
+            
+        if self.input_param.nep_param.max_nn_from_txt:
+            model.max_NN_radial  = max(self.input_param.nep_param.max_NN_radial, max_NN_radial)
+            model.max_NN_angular = max(self.input_param.nep_param.max_NN_angular, max_NN_angular)
+        else:
+            model.max_NN_radial = max(model.max_NN_radial, max_NN_radial)
+            model.max_NN_angular = max(model.max_NN_angular, max_NN_angular)
 
         if not os.path.exists(self.input_param.file_paths.model_store_dir):
             os.makedirs(self.input_param.file_paths.model_store_dir)

@@ -46,6 +46,9 @@ class OptimizerParam(object):
         if self.lambda_2 is not None and self.lambda_2 < 0:
             raise Exception("ERROR! the lambda_2 should >= 0 !")
 
+        self.scale_lr = get_parameter("scale_lr",optimizer_dict, False) #缩放学习率,单节点单卡不缩放，按照卡数*学习率缩放
+        self.scaling_method = get_parameter("scaling_method",optimizer_dict, "sqrt")  #scale_lr 为True后启用 sqrt linear
+
         if "KF" in self.opt_name.upper():  #set Kalman Filter Optimizer params
             self.kalman_lambda = get_parameter("kalman_lambda", optimizer_dict, 0.98)
             self.kalman_nue = get_parameter("kalman_nue", optimizer_dict, 0.9987)

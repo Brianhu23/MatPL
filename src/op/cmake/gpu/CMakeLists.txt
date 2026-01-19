@@ -16,14 +16,7 @@ set(CUDA_NVCC_FLAGS
     "-Wno-deprecated-gpu-targets"    # 抑制弃用警告
 )
 
-# 4. 添加 TYPES 定义，可以从外部传入
-if(NOT DEFINED NEP_TYPES)
-    set(NEP_TYPES 20)  # 默认值
-endif()
-message(STATUS "NEP TYPES: ${NEP_TYPES}")
-add_definitions(-DTYPESIN=${NEP_TYPES})
-
-# 5. 收集所有源文件
+# 4. 收集所有源文件
 file(GLOB_RECURSE GPU_SOURCES
     ${CMAKE_SOURCE_DIR}/src/*.cpp
     ${CMAKE_SOURCE_DIR}/kernel/*.cu
@@ -33,7 +26,7 @@ file(GLOB_RECURSE GPU_SOURCES
 # 移除绑定文件（绑定文件单独编译）
 list(REMOVE_ITEM GPU_SOURCES ${CMAKE_SOURCE_DIR}/src/CalcOps_bind.cpp)
 
-# 6. 创建核心计算库（把所有.cpp和.cu文件都编译到这里）
+# 5. 创建核心计算库（把所有.cpp和.cu文件都编译到这里）
 add_library(CalcOps_cuda SHARED ${GPU_SOURCES})
 
 # 设置头文件包含路径
@@ -58,7 +51,7 @@ set_target_properties(CalcOps_cuda PROPERTIES
 # 链接Torch库
 target_link_libraries(CalcOps_cuda PRIVATE ${TORCH_LIBRARIES})
 
-# 7. 创建Python绑定库
+# 6. 创建Python绑定库
 add_library(CalcOps_bind SHARED ${CMAKE_SOURCE_DIR}/src/CalcOps_bind.cpp)
 target_compile_features(CalcOps_bind PRIVATE cxx_std_17)
 

@@ -1,8 +1,7 @@
-#!/bin/sh
+#!/bin/bash
 
 # Default make command (single core) and NEP types
 MAKE_CMD="make"
-NEP_TYPES=20
 COMPILE_FORTRAN=0
 
 # Define directory variables
@@ -19,14 +18,13 @@ show_help() {
     echo "Options:"
     echo "  -h              Show this help message"
     echo "  -jN             Use N parallel jobs for compilation (e.g., -j4)"
-    echo "  -nN             Set number of NEP types (default: 20)"
     echo "  -m nn           Compile Fortran codes (required for NN and Linear models)"
     echo ""
     echo "Examples:"
     echo "  $0                     # Default compilation without Fortran"
     echo "  $0 -j4                 # Use 4 parallel jobs"
     echo "  $0 -m nn               # Compile Fortran codes"
-    echo "  $0 -j4 -n50 -m nn      # Use 4 jobs, 50 NEP types, compile Fortran"
+    echo "  $0 -j4 -m nn      # Use 4 jobs, compile Fortran"
     exit 0
 }
 
@@ -38,24 +36,6 @@ while [ $# -gt 0 ]; do
             ;;
         -j*)
             MAKE_CMD="make $1"
-            shift
-            ;;
-        -n*)
-            # Extract number after -n
-            NEP_TYPES=$(echo "$1" | cut -c3-)
-            # If no number, check if next argument is numeric
-            if [ -z "$NEP_TYPES" ]; then
-                case $2 in
-                    [0-9]*)
-                        NEP_TYPES="$2"
-                        shift
-                        ;;
-                    *)
-                        echo "Error: -n requires a numeric argument"
-                        exit 1
-                        ;;
-                esac
-            fi
             shift
             ;;
         -m)
@@ -74,7 +54,6 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-echo "Using NEP_TYPES = $NEP_TYPES"
 echo "Using MAKE_CMD = $MAKE_CMD"
 if [ $COMPILE_FORTRAN -eq 1 ]; then
     echo "Compile Fortran codes: Yes"
@@ -171,7 +150,7 @@ if [ -d "$OP_DIR" ]; then
     mkdir -p build
     cd build
     # for bigmodel the types should be 100
-    if cmake -DNEP_TYPES=$NEP_TYPES .. && $MAKE_CMD; then
+    if cmake .. && $MAKE_CMD; then
         echo "Operators built successfully"
     else
         echo "Warning: Failed to build operators"

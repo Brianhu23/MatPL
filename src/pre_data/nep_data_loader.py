@@ -42,9 +42,67 @@ def variable_length_collate_fn(batch):
     for key in keys:
         if key in ["position", "force", "atom_type_map", "ei"]:
             res[key] = torch.concat(extract_items(batch, key), dim=0)
+        elif key == "atom_type_image":
+            continue
         else:
             res[key] = torch.stack(extract_items(batch, key), dim=0)
     res["num_atom_sum"] = res["num_atom"].cumsum(0).to(res["num_atom"].dtype)
+    return res
+
+# collate_fn=lambda batch: variable_length_collate_fn_limit_mem(batch, batch_max_types=20)
+def variable_length_collate_fn_limit_mem(batch, batch_max_types=20):
+    filtered_batch = []
+    current_types_set = set()  # 跟踪当前batch中已有的元素类型
+    
+    for sample in batch:
+        atom_type_image = sample.get("atom_type_image")
+        if atom_type_image is not None:
+            # 获取该样本中独特的元素类型
+            unique_types = set(np.unique(atom_type_image))
+            num_new_types = len(unique_types - current_types_set)
+            
+            # 检查加入这个样本后是否会超过类型限制
+            if len(current_types_set) + num_new_types <= batch_max_types:
+                filtered_batch.append(sample)
+                current_types_set.update(unique_types)
+            else:
+                # 如果加入这个样本会超过限制，跳过它
+                # print(f"Skip: adding this sample would exceed type limit. "
+                #       f"Current types: {len(current_types_set)}, "
+                #       f"New types: {num_new_types}, "
+                #       f"Limit: {batch_max_types}")
+                continue
+        else:
+            # 如果没有 atom_type_image，默认保留
+            filtered_batch.append(sample)
+    # print(f"debug {len(current_types_set)}-{current_types_set}")
+    # 如果过滤后批次为空，返回空字典
+    if len(filtered_batch) == 0:
+        return {}
+    
+    # 记录实际使用的元素类型数量（调试用）
+    # print(f"Final batch: {len(filtered_batch)} samples, {len(current_types_set)} atom types")
+    
+    # 拼接过滤后的批次
+    keys = filtered_batch[0].keys()
+    res = {}
+
+    def extract_items(tensors, key):
+        return [x[key] for x in tensors]
+
+    for key in keys:
+        if key in ["position", "force", "atom_type_map", "ei"]:
+            items = extract_items(filtered_batch, key)
+            if items and items[0] is not None:
+                res[key] = torch.concat(items, dim=0)
+        elif key == "atom_type_image":
+            continue
+        else:
+            items = extract_items(filtered_batch, key)
+            if items and items[0] is not None:
+                res[key] = torch.stack(items, dim=0)
+    if "num_atom" in res and len(res["num_atom"]) > 0:
+        res["num_atom_sum"] = res["num_atom"].cumsum(0).to(res["num_atom"].dtype)
     return res
 
 class NepTestData():
@@ -194,6 +252,7 @@ class UniDataset(Dataset):
         # data["atom_type"] = torch.from_numpy(self.image_list[index].atom_type).to(self.index_type)
         data["atom_type_map"] = torch.from_numpy(self.image_list[index].atom_type_map).to(self.index_type)
         data["num_atom"] = torch.from_numpy(np.array([len(data["atom_type_map"])])).to(self.index_type)
+        data["atom_type_image"] = torch.from_numpy(self.image_list[index].atom_type).to(self.index_type)
         data["force"] = torch.from_numpy(self.image_list[index].force).to(self.dtype)
         data["ei"] = torch.from_numpy(self.image_list[index].atomic_energy).to(self.dtype)
         data["energy"] = torch.from_numpy(np.array([self.image_list[index].Ep])).to(self.dtype)
@@ -339,8 +398,6 @@ def calculate_neighbor_num_max_min(
 
 def calculate_neighbor_scaler(
                 dataset: UniDataset,
-                max_NN_radial,
-                max_NN_angular,
                 n_max_radial,
                 basis_size_radial,
                 n_max_angular,
@@ -350,8 +407,13 @@ def calculate_neighbor_scaler(
                 lmax_5,
                 device: torch.device,
                 num_workers:int=0):
+    max_radial = -1e10
+    min_radial = 1e10
+    max_angular = -1e10
+    min_angular = 1e10
+
     t1 = time.time()
-    batch_size_num = calculate_batch(dataset.max_atom_nums, max_NN_radial)
+    batch_size_num = calculate_batch(dataset.max_atom_nums, 400) # 按照最大默认400个近邻取batchsize
     dataloader = torch.utils.data.DataLoader(
         dataset,
         batch_size=batch_size_num,
@@ -384,9 +446,29 @@ def calculate_neighbor_scaler(
     # tmp_desc = []
     first_batch = True
     global_max = None
-    global_min = None    
+    global_min = None
     for _, sample in tqdm(enumerate(dataloader), total=len(dataloader), desc="Calculating scaler"):
         sample = {key: value.to(device) for key, value in sample.items()}
+        nn_radial, nn_angular = CalcOps.calculate_maxneigh(
+            sample["num_atom"],
+            sample["box"],
+            sample["box_original"],
+            sample["num_cell"],
+            sample["position"],
+            dataset.cutoff_radial,
+            dataset.cutoff_angular,
+            len(dataset.atom_types),
+            sample["atom_type_map"],
+            False
+        )
+        _max_NN_radial = max(torch.max(nn_radial).item(), 10)
+        _max_NN_angular = max(torch.max(nn_angular).item(), 10) # 避免cutoff过小导致没有近邻而报错
+
+        max_radial = max(max_radial, _max_NN_radial)
+        min_radial = min(min_radial, nn_radial.min().item())
+        max_angular = max(max_angular, _max_NN_angular)
+        min_angular = min(min_angular, nn_angular.min().item())
+        
         NN_radial, NN_angular, NL_radial, NL_angular, Ri_radial, Ri_angular = \
             CalcOps.calculate_neighbor(
             sample["num_atom"],
@@ -398,8 +480,8 @@ def calculate_neighbor_scaler(
             sample["position"],
             dataset.cutoff_radial,
             dataset.cutoff_angular,
-            max_NN_radial,
-            max_NN_angular,
+            nn_radial.max().item(),
+            nn_angular.max().item(),
             False # with_rij
         )
 
@@ -412,7 +494,7 @@ def calculate_neighbor_scaler(
             sample["atom_type_map"],
             dataset.cutoff_radial,
             dataset.cutoff_angular,
-            max_NN_radial,
+            nn_radial.max().item(), # 多体特征使用两体近邻+cutoff过滤
             lmax_3,
             lmax_4,
             lmax_5
@@ -427,7 +509,6 @@ def calculate_neighbor_scaler(
 
         # check_cuda_memory(_, 1, "in calculate_scaler ",empty=False)
         del descriptor, NN_radial, NN_angular, NL_radial, NL_angular, Ri_radial, Ri_angular
-
         torch.cuda.empty_cache()
 
         # tmp_desc.append(descriptor.detach())
@@ -443,7 +524,8 @@ def calculate_neighbor_scaler(
     # qscaler.extend(qscaler_radial.tolist()) 
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-    return qscaler
+
+    return qscaler, max_radial, min_radial, max_angular, min_angular
 
 def calculate_batch(N, MN):
     if torch.cuda.is_available():

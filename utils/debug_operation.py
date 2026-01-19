@@ -2,7 +2,7 @@ import torch
 import gc
 import psutil
 
-def check_cuda_memory(epoch, num_epochs, types, empty=True):
+def check_cuda_memory(epoch, num_epochs, types, empty=False):
     if empty:
         torch.cuda.empty_cache()  # Clear the cache to obtain accurate memory usage information.
     allocated_memory = torch.cuda.memory_allocated() / 1024**3  # Allocated memory, converted to GB

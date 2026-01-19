@@ -19,7 +19,6 @@ const double K_C_SP = 14.399645; // 1/(4*PI*epsilon_0)
 // const double PI_HALF = 1.570796326794897;
 const double PI = 3.14159265358979323846;
 const double HALF_PI = 1.5707963267948966;
-const int NUM_ELEMENTS = 103;
 
 void cpu_dev_apply_mic(const double* box, double& x12, double& y12, double& z12);
 

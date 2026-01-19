@@ -929,7 +929,6 @@ torch::autograd::variable_list CalculateNepMbFeatGrad::backward(
         int64_t lmax_4 = ctx->saved_data["lmax_4"].toInt();
         int64_t lmax_5 = ctx->saved_data["lmax_5"].toInt();
         int64_t fix_cij = ctx->saved_data["fix_cij"].toInt();
-
         auto dims = coeff3.sizes();
         int64_t atom_types = dims[0];
         int64_t n_max = dims[2];

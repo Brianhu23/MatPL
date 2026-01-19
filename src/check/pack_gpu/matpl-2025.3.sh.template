@@ -2,7 +2,6 @@
 
 # Default to single-core compilation
 JOB_COUNT=1
-NEP_TYPES=""  # Initialize as empty
 UNPACK_ONLY=false
 COMPILE_FORTRAN=false  # 新增：是否编译 Fortran 版本
 
@@ -12,7 +11,6 @@ show_help() {
   echo ""
   echo "Options:"
   echo "  -j N     Set the number of CPU cores for compilation (default: 1)"
-  echo "  -n TYPE  Set NEP_TYPES value for compilation (default: 20)"
   echo "  -m nn    Compile LAMMPS Fortran version (for Linear and NN models)"
   echo "  -u       Unpack the archive only, skip compilation"
   echo "  -h, --help  Display this help message"
@@ -201,10 +199,6 @@ while getopts "j:n:m:uh" opt; do
       JOB_COUNT=$OPTARG
       echo "Using $JOB_COUNT CPU cores for compilation"
       ;;
-    n)
-      NEP_TYPES=$OPTARG
-      echo "Using NEP_TYPES = $NEP_TYPES"
-      ;;
     m)
       if [ "$OPTARG" = "nn" ]; then
         COMPILE_FORTRAN=true
@@ -314,32 +308,16 @@ echo "ENV_DIR/bin/activate path is: $ENV_DIR/bin/activate"
 cd $MATPL/src
 echo "Compiling MatPL..."
 if [ $JOB_COUNT -gt 1 ]; then
-    if [ -n "$NEP_TYPES" ]; then
-        if [ "$COMPILE_FORTRAN" = true ]; then
-            sh build.sh -j$JOB_COUNT -n$NEP_TYPES -m nn
-        else
-            sh build.sh -j$JOB_COUNT -n$NEP_TYPES
-        fi
+    if [ "$COMPILE_FORTRAN" = true ]; then
+        sh build.sh -j$JOB_COUNT -m nn
     else
-        if [ "$COMPILE_FORTRAN" = true ]; then
-            sh build.sh -j$JOB_COUNT -m nn
-        else
-            sh build.sh -j$JOB_COUNT
-        fi
+        sh build.sh -j$JOB_COUNT
     fi
 else
-    if [ -n "$NEP_TYPES" ]; then
-        if [ "$COMPILE_FORTRAN" = true ]; then
-            sh build.sh -n$NEP_TYPES -m nn
-        else
-            sh build.sh -n$NEP_TYPES
-        fi
+    if [ "$COMPILE_FORTRAN" = true ]; then
+        sh build.sh -m nn
     else
-        if [ "$COMPILE_FORTRAN" = true ]; then
-            sh build.sh -m nn
-        else
-            sh build.sh
-        fi
+        sh build.sh
     fi
 fi
 

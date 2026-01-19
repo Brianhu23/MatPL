@@ -107,7 +107,22 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, start_lr,
     end = time.time()
     for i, sample in enumerate(train_loader):
         sample = {key: value.to(device) for key, value in sample.items()}
+        nn_radial, nn_angular = CalcOps.calculate_maxneigh(
+            sample["num_atom"],
+            sample["box"],
+            sample["box_original"],
+            sample["num_cell"],
+            sample["position"],
+            model.cutoff_radial,
+            model.cutoff_angular,
+            len(model.atom_type),
+            sample["atom_type_map"],
+            False
+        )
+        max_NN_radial = max(torch.max(nn_radial).item(), 10)
+        max_NN_angular = max(torch.max(nn_angular).item(), 10)
         FFAtomType = torch.from_numpy(np.array(model.atom_type)).to(device=device, dtype=sample["atom_type_map"].dtype)
+        # mem_3c = (int(sample['num_atom_sum'][-1])  *  model.max_NN_angular + int(sample['num_atom_sum'][-1]) ) * len(args.atom_type) *args.nep_param.basis_size[1] * args.nep_param.n_max[1] * 8 / 1024/ 1024/ 1024
         NN_radial, NN_angular, NL_radial, NL_angular, Ri_radial, Ri_angular = \
             CalcOps.calculate_neighbor(
             sample["num_atom"],
@@ -119,8 +134,8 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, start_lr,
             sample["position"],
             model.cutoff_radial,
             model.cutoff_angular,
-            model.max_NN_radial,
-            model.max_NN_angular,
+            max_NN_radial,
+            max_NN_angular,
             True #calculate_neighbor with rij
         )
         Virial_label = sample["virial"]
@@ -150,7 +165,7 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, start_lr,
                 NN_radial, NL_radial, Ri_radial, 
                     NN_angular, NL_angular, Ri_angular,
                         sample["num_atom"], sample["atom_type_map"], None, None)
-     
+        
         optimizer.zero_grad()
 
         loss_F_val = criterion(Force_predict, Force_label)
@@ -256,6 +271,7 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, start_lr,
                 avg_atom_number,
             )
         loss.backward()
+        # print(f"{i} {torch.sum(model.c_param_3.grad)} Einfer:{Etot_predict[0][0].item()} Edft:{Etot_label[0][0].item()}")
         if args.optimizer_param.norm_type is not None:
             nn.utils.clip_grad_norm_(model.parameters(), args.optimizer_param.max_norm, args.optimizer_param.norm_type)
         elif args.optimizer_param.clip_value is not None:
@@ -360,8 +376,23 @@ def train_KF(train_loader, model, criterion, optimizer, epoch, device, args:Inpu
 
     end = time.time()
     for i, sample in enumerate(train_loader):
-        # measure data loading time
+        if i % 100 != 0:
+            continue
         sample = {key: value.to(device) for key, value in sample.items()}
+        nn_radial, nn_angular = CalcOps.calculate_maxneigh(
+            sample["num_atom"],
+            sample["box"],
+            sample["box_original"],
+            sample["num_cell"],
+            sample["position"],
+            model.cutoff_radial,
+            model.cutoff_angular,
+            len(model.atom_type),
+            sample["atom_type_map"],
+            False
+        )
+        max_NN_radial = max(torch.max(nn_radial).item(), 10)
+        max_NN_angular = max(torch.max(nn_angular).item(), 10)
         FFAtomType = torch.from_numpy(np.array(model.atom_type)).to(device=device, dtype=sample["atom_type_map"].dtype)
         NN_radial, NN_angular, NL_radial, NL_angular, Ri_radial, Ri_angular = \
             CalcOps.calculate_neighbor(
@@ -374,8 +405,8 @@ def train_KF(train_loader, model, criterion, optimizer, epoch, device, args:Inpu
             sample["position"],
             model.cutoff_radial,
             model.cutoff_angular,
-            model.max_NN_radial,
-            model.max_NN_angular,
+            max_NN_radial,
+            max_NN_angular,
             True #calculate_neighbor
         )
         kalman_inputs = [NN_radial, NL_radial, Ri_radial, NN_angular, NL_angular, Ri_angular, \
@@ -477,6 +508,21 @@ def valid(val_loader, model, criterion, device, args:InputParam):
         for i, sample in enumerate(val_loader):
             sample = {key: value.to(device) for key, value in sample.items()}
             FFAtomType = torch.from_numpy(np.array(model.atom_type)).to(device=device, dtype=sample["atom_type_map"].dtype)
+            
+            nn_radial, nn_angular = CalcOps.calculate_maxneigh(
+                sample["num_atom"],
+                sample["box"],
+                sample["box_original"],
+                sample["num_cell"],
+                sample["position"],
+                model.cutoff_radial,
+                model.cutoff_angular,
+                len(model.atom_type),
+                sample["atom_type_map"],
+                False
+            )
+            max_NN_radial = max(torch.max(nn_radial).item(), 10)
+            max_NN_angular = max(torch.max(nn_angular).item(), 10)
             NN_radial, NN_angular, NL_radial, NL_angular, Ri_radial, Ri_angular = \
                 CalcOps.calculate_neighbor(
                 sample["num_atom"],
@@ -488,10 +534,11 @@ def valid(val_loader, model, criterion, device, args:InputParam):
                 sample["position"],
                 model.cutoff_radial,
                 model.cutoff_angular,
-                model.max_NN_radial,
-                model.max_NN_angular,
+                max_NN_radial,
+                max_NN_angular,
                 True #calculate_neighbor
             )
+
             Virial_label = sample["virial"]
             Etot_label   = sample["energy"]
             Ei_label     = sample["ei"]

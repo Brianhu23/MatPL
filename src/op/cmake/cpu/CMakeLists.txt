@@ -16,7 +16,7 @@ target_compile_features(CalcOps_bind_cpu PRIVATE cxx_std_17)
 target_link_libraries(CalcOps_bind_cpu PRIVATE CalcOps_cpu ${TORCH_LIBRARIES})
 
 # 5. Post-build steps: Copy CPU libraries as GPU-compatible libraries
-if (NOT HAS_CUDA_SUPPORT)
+if (NOT COMPILE_WITH_GPU)
     add_custom_command(TARGET CalcOps_bind_cpu POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy
             ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/libCalcOps_bind_cpu.so

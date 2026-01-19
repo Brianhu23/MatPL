@@ -1,7 +1,6 @@
 #include "./utilities/error.cuh"
-#include "./utilities/common.cuh"
 #include "./utilities/nep_utilities.cuh"
-#include "./utilities/nep3_small_box.cuh"
+#include "./utilities/nep_feature.cuh"
 #include <iostream>
 
 void launch_calculate_nepmbfeat(
@@ -35,7 +34,7 @@ void launch_calculate_nepmbfeat(
     if (lmax_3 > 0) feat_3b_num += n_max_3b * lmax_3;
     if (lmax_4 > 0) feat_3b_num += n_max_3b;
     if (lmax_5 > 0) feat_3b_num += n_max_3b;
-    find_mb_descriptor_small_box<<<grid_size, BLOCK_SIZE>>>(
+    find_mb_descriptor<<<grid_size, BLOCK_SIZE>>>(
         N,
         n_types,
         num_types_sq,

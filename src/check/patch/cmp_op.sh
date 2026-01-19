@@ -2,8 +2,6 @@
 
 # Default make command (single core) and NEP types
 MAKE_CMD="make"
-NEP_TYPES=20  # 默认值
-
 PATCH_DIR=$(pwd)
 BASE_DIR=$1
 VERSION=$2
@@ -53,24 +51,6 @@ while [ $# -gt 0 ]; do
             MAKE_CMD="make $1"
             shift
             ;;
-        -n*)
-            # 提取 -n 后面的数字
-            NEP_TYPES=$(echo "$1" | sed 's/^-n//')
-            # 如果没有数字，则检查下一个参数是否为数字
-            if [ -z "$NEP_TYPES" ]; then
-                case $2 in
-                    [0-9]*)
-                        NEP_TYPES="$2"
-                        shift
-                        ;;
-                    *)
-                        echo "Error: -n requires a numeric argument"
-                        exit 1
-                        ;;
-                esac
-            fi
-            shift
-            ;;
         *)
             # 忽略其他参数
             shift
@@ -78,7 +58,6 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-echo "Using NEP_TYPES = $NEP_TYPES"
 echo "Using MAKE_CMD = $MAKE_CMD"
 
 # 检查目录是否存在
@@ -104,7 +83,7 @@ cd build || {
 }
 
 # for bigmodel the types should be 100
-cmake -DNEP_TYPES="$NEP_TYPES" ..
+cmake ..
 $MAKE_CMD
 
 cd "$PATCH_DIR" || {

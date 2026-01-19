@@ -1,18 +1,3 @@
-/*
-    Copyright 2017 Zheyong Fan, Ville Vierimaa, Mikko Ervasti, and Ari Harju
-    This file is part of GPUMD.
-    GPUMD is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-    GPUMD is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-    You should have received a copy of the GNU General Public License
-    along with GPUMD.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
 #pragma once
 #include "nep_utilities.cuh"
 
@@ -251,8 +236,6 @@ static __device__ __forceinline__ void scd_get_f12_1(
   const int n2,
   double *f12k)
 { //l = 1
-  int k_start_id = type_j * n_base_angular * 4;
-  int k_idx = 0;
   double dfk = 0.0; // dgn(rij)/dc
   int dsnlm_idx = dsnlm_start_idx + type_j * n_base_angular * NUM_OF_ABC;
   for(int k=0; k < n_base_angular; k++) {
@@ -260,7 +243,6 @@ static __device__ __forceinline__ void scd_get_f12_1(
     double tmpr = 0.0, tmpx = 0.0, tmpy = 0.0, tmpz = 0.0;
     double rr0 = 0.0, rr1 = 0.0, rr2 = 0.0;
     double rrr0 = 0.0, rrr1 = 0.0, rrr2=0.0;
-    k_idx = k_start_id + k * 4;
     // 左边项 rij
     rr0 =       C3B[0] * dsnlm_dc[dsnlm_i]   * fnp * blm[0]; 
     rr1 = 2.0 * C3B[1] * dsnlm_dc[dsnlm_i+1] * fnp * blm[1];
@@ -271,22 +253,22 @@ static __device__ __forceinline__ void scd_get_f12_1(
     rrr1 = 2.0 * s[1] * dfk * blm[1]; 
     rrr2 = 2.0 * s[2] * dfk * blm[2]; // 后项 dblm/drij L=1 时 为0
     tmpr = rr0 + rr1 + rr2 + rrr0 + rrr1 + rrr2;
-    f12k[k_idx + 0] += 2.0 * Fp * scd_r12[0] * tmpr;// 可以考虑移出去
+    f12k[k ] += 2.0 * Fp * scd_r12[0] * tmpr;// 可以考虑移出去
 
     // xij
     tmpx += 2.0 * C3B[1] * dsnlm_dc[dsnlm_i+1] * fn; // dblm/dxij b10 b12 为0
     tmpx += 2.0 * s[1] * fn12[k] * rij_Lsq; // dblm/dxij b10 b12 为0
-    f12k[k_idx + 1] += 2.0 * Fp * scd_r12[1] * tmpx;
+    f12k[k ] += 2.0 * Fp * scd_r12[1] * tmpx;
 
     // yij
     tmpy += 2.0 * C3B[2] * dsnlm_dc[dsnlm_i+2] * fn;
     tmpy += 2.0 * s[2] * fn12[k] * rij_Lsq;
-    f12k[k_idx + 2] += 2.0 * Fp * scd_r12[2] * tmpy;
+    f12k[k ] += 2.0 * Fp * scd_r12[2] * tmpy;
 
     // zij
     tmpz += C3B[0] * dsnlm_dc[dsnlm_i] * fn;
     tmpz += s[0] * fn12[k] * rij_Lsq;
-    f12k[k_idx + 3] += 2.0 * Fp * scd_r12[3] * tmpz;
+    f12k[k ] += 2.0 * Fp * scd_r12[3] * tmpz;
 
     // if (n1==0 and n2==0 and k == 0){
     //   printf("\tscd L=1 n1=%d n2=%d k=%d s0=%lf s1=%lf s2=%lf fnp=%lf fn=%lf Fp=%lf fn12[%d]=%lf fnp12[%d]=%lf rij_Lsq=%lf rij_L2sq=%lf b10=%lf b11=%lf b12=%lf dqr=%lf dqx=%lf dqy=%lf dqz=%lf r0=%f r1=%f r2=%f rr1=%f rr2=%f rr3=%f\n", 
@@ -324,13 +306,10 @@ static __device__ __forceinline__ void scd_get_f12_2(
   )
 {
   // L = 2 c3b 3 4 5 6 7
-  int k_start_id = type_j * n_base_angular * 4;
-  int k_idx = 0;
   int dsnlm_idx = dsnlm_start_idx + type_j * n_base_angular * NUM_OF_ABC;
   for(int k=0; k < n_base_angular; k++) {
     int dsnlm_i = dsnlm_idx + k * NUM_OF_ABC;
     double tmpr = 0.0, tmpx = 0.0, tmpy = 0.0, tmpz = 0.0;
-    k_idx = k_start_id + k * 4;
     // 左边项 rij
     tmpr +=  C3B[3] * dsnlm_dc[dsnlm_i+3] * (fnp * blm[3] + fn * dblm_r[3]) + 
                   2.0 * C3B[4] * dsnlm_dc[dsnlm_i+4] * fnp * blm[4] + 
@@ -343,7 +322,7 @@ static __device__ __forceinline__ void scd_get_f12_2(
             2.0 * s[2] * (fnp12[k] * rij_Lsq - 2.0 * fn12[k] * rij_L2sq) * blm[5] +
             2.0 * s[3] * (fnp12[k] * rij_Lsq - 2.0 * fn12[k] * rij_L2sq) * blm[6] +
             2.0 * s[4] * (fnp12[k] * rij_Lsq - 2.0 * fn12[k] * rij_L2sq) * blm[7]; 
-    f12k[k_idx + 0] += 2.0 * Fp * scd_r12[0] * tmpr;// 可以考虑移出去
+    f12k[k ] += 2.0 * Fp * scd_r12[0] * tmpr;// 可以考虑移出去
 
     // 左边项 xij
     tmpx += 
@@ -355,7 +334,7 @@ static __device__ __forceinline__ void scd_get_f12_2(
             2.0 * s[1] * fn12[k] * rij_Lsq * dblm_x[4] +
             2.0 * s[3] * fn12[k] * rij_Lsq * dblm_x[6] +
             2.0 * s[4] * fn12[k] * rij_Lsq * dblm_x[7];
-    f12k[k_idx + 1] += 2.0 * Fp * scd_r12[1] * tmpx;
+    f12k[k ] += 2.0 * Fp * scd_r12[1] * tmpx;
 
     // 左边项 yij
     tmpy += 
@@ -367,7 +346,7 @@ static __device__ __forceinline__ void scd_get_f12_2(
             2.0 * s[2] * fn12[k] * rij_Lsq * dblm_y[5] + 
             2.0 * s[3] * fn12[k] * rij_Lsq * dblm_y[6] +
             2.0 * s[4] * fn12[k] * rij_Lsq * dblm_y[7];    
-    f12k[k_idx + 2] += 2.0 * Fp * scd_r12[2] * tmpy;
+    f12k[k ] += 2.0 * Fp * scd_r12[2] * tmpy;
     
     // 左边项 zij
     tmpz +=  C3B[3] * dsnlm_dc[dsnlm_i+3] * fn * dblm_z[3] + 
@@ -377,7 +356,7 @@ static __device__ __forceinline__ void scd_get_f12_2(
     tmpz +=  s[0] * fn12[k] * rij_Lsq * dblm_z[3] +  
                   2.0 * s[1] * fn12[k] * rij_Lsq * dblm_z[4] +
                   2.0 * s[2] * fn12[k] * rij_Lsq * dblm_z[5];
-    f12k[k_idx + 3] += 2.0 * Fp * scd_r12[3] * tmpz;
+    f12k[k ] += 2.0 * Fp * scd_r12[3] * tmpz;
 
     // if (n1==0 and n2==0 and k == 0){
     //   printf("\tscd L=2 n1=%d n2=%d s0=%lf s1=%lf s2=%lf s3=%lf s4=%lf fnp=%lf fn=%lf Fp=%lf b20=%lf b21=%lf b22=%lf b23=%lf b24=%lf dqr=%lf dqx=%lf dqy=%lf dqz=%lf\n", 
@@ -415,9 +394,7 @@ static __device__ __forceinline__ void scd_get_f12_4body(
 {
   // L = 2 c3b 3 4 5 6 7
 
-  int k_start_id = type_j * n_base_angular * 4;
   int dsnlm_idx = dsnlm_start_idx + type_j * n_base_angular * NUM_OF_ABC;
-  int k_idx = 0;
 
   double dnlm_drij[5] = {0.0};
   dnlm_drij[0] = fnp * blm[3] + fn * dblm_r[3];
@@ -459,7 +436,6 @@ static __device__ __forceinline__ void scd_get_f12_4body(
   for(int k=0; k < n_base_angular; k++) {
     int dsnlm_i = dsnlm_idx + k * NUM_OF_ABC;
     double tmpr = 0.0, tmpx = 0.0, tmpy = 0.0, tmpz = 0.0;
-    k_idx = k_start_id + k * 4;
     dnlm_dc[0] = dsnlm_dc[dsnlm_i + 3];
     dnlm_dc[1] = dsnlm_dc[dsnlm_i + 4];
     dnlm_dc[2] = dsnlm_dc[dsnlm_i + 5];
@@ -524,7 +500,7 @@ static __device__ __forceinline__ void scd_get_f12_4body(
       dnlm_dc[1] * dnlm_drij[2] * s[4] + s[1] * dnlm_drij_dc[2] * s[4] + s[1] * dnlm_drij[2] * dnlm_dc[4] +
       dnlm_dc[1] * s[2] * dnlm_drij[4] + s[1] * dnlm_dc[2] * dnlm_drij[4] + s[1] * s[2] * dnlm_drij_dc[4]
     );
-    f12k[k_idx + 0] += Fp * scd_r12[0] * tmpr;
+    f12k[k ] += Fp * scd_r12[0] * tmpr;
     // dxij
     // d0
     tmpx += 3.0 * C4B[0] * (
@@ -560,7 +536,7 @@ static __device__ __forceinline__ void scd_get_f12_4body(
       dnlm_dc[1] * dnlm_dxij[2] * s[4] + s[1] * dnlm_dxij_dc[2] * s[4] + s[1] * dnlm_dxij[2] * dnlm_dc[4] +
       dnlm_dc[1] * s[2] * dnlm_dxij[4] + s[1] * dnlm_dc[2] * dnlm_dxij[4] + s[1] * s[2] * dnlm_dxij_dc[4]
     );    
-    f12k[k_idx + 1] += Fp * scd_r12[1] * tmpx;
+    f12k[k ] += Fp * scd_r12[1] * tmpx;
 
     // dyij
     // d0
@@ -597,7 +573,7 @@ static __device__ __forceinline__ void scd_get_f12_4body(
       dnlm_dc[1] * dnlm_dyij[2] * s[4] + s[1] * dnlm_dyij_dc[2] * s[4] + s[1] * dnlm_dyij[2] * dnlm_dc[4] +
       dnlm_dc[1] * s[2] * dnlm_dyij[4] + s[1] * dnlm_dc[2] * dnlm_dyij[4] + s[1] * s[2] * dnlm_dyij_dc[4]
     );    
-    f12k[k_idx + 2] += Fp * scd_r12[2] * tmpy;
+    f12k[k ] += Fp * scd_r12[2] * tmpy;
 
     // dzij
     // d0
@@ -634,7 +610,7 @@ static __device__ __forceinline__ void scd_get_f12_4body(
       dnlm_dc[1] * dnlm_dzij[2] * s[4] + s[1] * dnlm_dzij_dc[2] * s[4] + s[1] * dnlm_dzij[2] * dnlm_dc[4] +
       dnlm_dc[1] * s[2] * dnlm_dzij[4] + s[1] * dnlm_dc[2] * dnlm_dzij[4] + s[1] * s[2] * dnlm_dzij_dc[4]
     );    
-    f12k[k_idx + 3] += Fp * scd_r12[3] * tmpz;
+    f12k[k ] += Fp * scd_r12[3] * tmpz;
   }
 }
 
@@ -667,9 +643,7 @@ static __device__ __forceinline__ void scd_get_f12_5body(
 )
 {
   // L = 1
-  int k_start_id = type_j * n_base_angular * 4;
   int dsnlm_idx = dsnlm_start_idx + type_j * n_base_angular * NUM_OF_ABC;
-  int k_idx = 0;
   double dnlm_drij[3] = {0.0};
   dnlm_drij[0] = fnp * blm[0]; // fn * dblm/drij = 0
   dnlm_drij[1] = fnp * blm[1];
@@ -703,7 +677,6 @@ static __device__ __forceinline__ void scd_get_f12_5body(
   for(int k=0; k < n_base_angular; k++) {
     int dsnlm_i = dsnlm_idx + k * NUM_OF_ABC;
     double tmpr = 0.0, tmpx = 0.0, tmpy = 0.0, tmpz = 0.0;
-    k_idx = k_start_id + k * 4;
     dnlm_dc[0] = dsnlm_dc[dsnlm_i + 0];
     dnlm_dc[1] = dsnlm_dc[dsnlm_i + 1];
     dnlm_dc[2] = dsnlm_dc[dsnlm_i + 2];
@@ -736,7 +709,7 @@ static __device__ __forceinline__ void scd_get_f12_5body(
       s[0] * dnlm_drij[0] * ds1s2_c + 2.0 * s[0] * dnlm_dc[0] * ds1s2 + s2[0] * d_tmp);
     // d2
     tmpr += 4.0 * C5B[2] * (ds1s2_c * ds1s2 + (s2[1] + s2[2]) * d_tmp);
-    f12k[k_idx + 0] += Fp * scd_r12[0] * tmpr;
+    f12k[k ] += Fp * scd_r12[0] * tmpr;
 
     // dxij
     // d0
@@ -750,7 +723,7 @@ static __device__ __forceinline__ void scd_get_f12_5body(
       s[0] * dnlm_dxij[0] * ds1s2_c + 2.0 * s[0] * dnlm_dc[0] * ds1s2 + s2[0] * d_tmp);
     // d2
     tmpx += 4.0 * C5B[2] * (ds1s2_c * ds1s2 + (s2[1] + s2[2]) * d_tmp);
-    f12k[k_idx + 1] += Fp * scd_r12[1] * tmpx;
+    f12k[k ] += Fp * scd_r12[1] * tmpx;
 
     // dyij
     // d0
@@ -764,7 +737,7 @@ static __device__ __forceinline__ void scd_get_f12_5body(
       s[0] * dnlm_dyij[0] * ds1s2_c + 2.0 * s[0] * dnlm_dc[0] * ds1s2 + s2[0] * d_tmp);
     // d2
     tmpy += 4.0 * C5B[2] * (ds1s2_c * ds1s2 + (s2[1] + s2[2]) * d_tmp);
-    f12k[k_idx + 2] += Fp * scd_r12[2] * tmpy;
+    f12k[k ] += Fp * scd_r12[2] * tmpy;
 
     // dzij
     // d0
@@ -778,7 +751,7 @@ static __device__ __forceinline__ void scd_get_f12_5body(
       s[0] * dnlm_dzij[0] * ds1s2_c + 2.0 * s[0] * dnlm_dc[0] * ds1s2 + s2[0] * d_tmp);
     // d2
     tmpz += 4.0 * C5B[2] * (ds1s2_c * ds1s2 + (s2[1] + s2[2]) * d_tmp);
-    f12k[k_idx + 3] += Fp * scd_r12[3] * tmpz;
+    f12k[k ] += Fp * scd_r12[3] * tmpz;
   }
 
   // if (n1==0 and n2==0){
@@ -815,13 +788,10 @@ static __device__ __forceinline__ void scd_get_f12_3(
   double *f12k)
 {
   // L = 3 c3b 8 9 10 11 12 13 14  s 0 1 2 3 4 5 6
-  int k_start_id = type_j * n_base_angular * 4;
-  int k_idx = 0;
   int dsnlm_idx = dsnlm_start_idx + type_j * n_base_angular * NUM_OF_ABC;
   for(int k=0; k < n_base_angular; k++) {
     int dsnlm_i = dsnlm_idx + k * NUM_OF_ABC;
     double tmpr = 0.0, tmpx = 0.0, tmpy = 0.0, tmpz = 0.0;
-    k_idx = k_start_id + k * 4;
     // 左边项 rij
     tmpr +=         C3B[8]  * dsnlm_dc[dsnlm_i+8] * (fnp * blm[8]  + fn * dblm_r[8]) + 
               2.0 * C3B[9]  * dsnlm_dc[dsnlm_i+9] * (fnp * blm[9]  + fn * dblm_r[9]) + 
@@ -838,7 +808,7 @@ static __device__ __forceinline__ void scd_get_f12_3(
             2.0 * s[4] *  (fnp12[k] * rij_Lsq - 3.0 * fn12[k] * rij_L2sq) * blm[12] +   //dblm/drij = 0
             2.0 * s[5] *  (fnp12[k] * rij_Lsq - 3.0 * fn12[k] * rij_L2sq) * blm[13] +   //dblm/drij = 0
             2.0 * s[6] *  (fnp12[k] * rij_Lsq - 3.0 * fn12[k] * rij_L2sq) * blm[14];    //dblm/drij = 0
-    f12k[k_idx + 0] += 2.0 * Fp * scd_r12[0] * tmpr;// 可以考虑移出去
+    f12k[k ] += 2.0 * Fp * scd_r12[0] * tmpr;// 可以考虑移出去
 
     // 左边项 xij
     tmpx +=       //C3B[8]  * dsnlm_dc[dsnlm_i+8]  * fn * dblm_x[8] +  
@@ -856,7 +826,7 @@ static __device__ __forceinline__ void scd_get_f12_3(
               2.0 * s[4] * fn12[k] * rij_Lsq * dblm_x[12] + 
               2.0 * s[5] * fn12[k] * rij_Lsq * dblm_x[13] + 
               2.0 * s[6] * fn12[k] * rij_Lsq * dblm_x[14];
-    f12k[k_idx + 1] += 2.0 * Fp * scd_r12[1] * tmpx;
+    f12k[k ] += 2.0 * Fp * scd_r12[1] * tmpx;
 
     // 左边项 yij
     tmpy +=   //       C3B[8] * dsnlm_dc[dsnlm_i+8]  * fn * dblm_y[8] +  
@@ -874,7 +844,7 @@ static __device__ __forceinline__ void scd_get_f12_3(
               2.0 * s[4] * fn12[k] * rij_Lsq * dblm_y[12] +
               2.0 * s[5] * fn12[k] * rij_Lsq * dblm_y[13] +
               2.0 * s[6] * fn12[k] * rij_Lsq * dblm_y[14];
-    f12k[k_idx + 2] += 2.0 * Fp * scd_r12[2] * tmpy;
+    f12k[k ] += 2.0 * Fp * scd_r12[2] * tmpy;
 
     // 左边项 zij
     tmpz +=         C3B[8]  * dsnlm_dc[dsnlm_i+8]  * fn * dblm_z[8] +  
@@ -892,7 +862,7 @@ static __device__ __forceinline__ void scd_get_f12_3(
               2.0 * s[4] * fn12[k] * rij_Lsq * dblm_z[12];
             // 2.0 * s[5] * fn12[k] * rij_Lsq * dblm_z[13] +  0.0 +
             // 2.0 * s[6] * fn12[k] * rij_Lsq * dblm_z[14] +  0.0;
-    f12k[k_idx + 3] += 2.0 * Fp * scd_r12[3] * tmpz;
+    f12k[k ] += 2.0 * Fp * scd_r12[3] * tmpz;
     // if (n1==0 and n2==0 and k == 0){
     //   printf("\tscd L=3 n1=%d n2=%d s0=%lf s1=%lf s2=%lf s3=%lf s4=%lf s5=%lf s6=%lf fnp=%lf fn=%lf Fp=%lf b30=%lf b31=%lf b32=%lf b33=%lf b34=%lf b35=%lf b36=%lf dqr=%lf dqx=%lf dqy=%lf dqz=%lf\n", 
     //           n1, n2, s[0], s[1]*2.0, s[2]*2.0, s[3]*2.0, s[4]*2.0, s[5]*2.0, s[6]*2.0, fnp, fn, Fp, blm[8], blm[9], blm[10], blm[11], blm[12], blm[13], blm[14], tmpr, tmpx, tmpy, tmpz);
@@ -927,13 +897,10 @@ static __device__ __forceinline__ void scd_get_f12_4(
   const int n2,
   double *f12k)
 {
-  int k_start_id = type_j * n_base_angular * 4;
-  int k_idx = 0;
   int dsnlm_idx = dsnlm_start_idx + type_j * n_base_angular * NUM_OF_ABC;
   for(int k=0; k < n_base_angular; k++) {
     int dsnlm_i = dsnlm_idx + k * NUM_OF_ABC;
     double tmpr = 0.0, tmpx = 0.0, tmpy = 0.0, tmpz = 0.0;
-    k_idx = k_start_id + k * 4;
     // 左边项 rij
     tmpr +=       C3B[15] * dsnlm_dc[dsnlm_i+15] * (fnp * blm[15] + fn * dblm_r[15]) + 
             2.0 * C3B[16] * dsnlm_dc[dsnlm_i+16] * (fnp * blm[16] + fn * dblm_r[16]) + 
@@ -954,7 +921,7 @@ static __device__ __forceinline__ void scd_get_f12_4(
             2.0 * s[6] * ((fnp12[k] * rij_Lsq - 4.0 * fn12[k] * rij_L2sq) * blm[21]) +
             2.0 * s[7] * ((fnp12[k] * rij_Lsq - 4.0 * fn12[k] * rij_L2sq) * blm[22]) +
             2.0 * s[8] * ((fnp12[k] * rij_Lsq - 4.0 * fn12[k] * rij_L2sq) * blm[23]); 
-    f12k[k_idx + 0] += 2.0 * Fp * scd_r12[0] * tmpr;// 可以考虑移出去
+    f12k[k ] += 2.0 * Fp * scd_r12[0] * tmpr;// 可以考虑移出去
 
     // 左边项 xij
     tmpx +=       C3B[15] * dsnlm_dc[dsnlm_i+15] * fn * dblm_x[15] + 
@@ -977,7 +944,7 @@ static __device__ __forceinline__ void scd_get_f12_4(
             2.0 * s[6] * fn12[k] * rij_Lsq * dblm_x[21] + 
             2.0 * s[7] * fn12[k] * rij_Lsq * dblm_x[22] + 
             2.0 * s[8] * fn12[k] * rij_Lsq * dblm_x[23];
-    f12k[k_idx + 1] += 2.0 * Fp * scd_r12[1] * tmpx;
+    f12k[k ] += 2.0 * Fp * scd_r12[1] * tmpx;
 
     // 左边项 yij
     tmpy +=       C3B[15] * dsnlm_dc[dsnlm_i+15] * fn * dblm_y[15] + 
@@ -1000,7 +967,7 @@ static __device__ __forceinline__ void scd_get_f12_4(
             2.0 * s[6] * fn12[k] * rij_Lsq * dblm_y[21] + 
             2.0 * s[7] * fn12[k] * rij_Lsq * dblm_y[22] + 
             2.0 * s[8] * fn12[k] * rij_Lsq * dblm_y[23];
-    f12k[k_idx + 2] += 2.0 * Fp * scd_r12[2] * tmpy;
+    f12k[k ] += 2.0 * Fp * scd_r12[2] * tmpy;
 
     // 左边项 zij
     tmpz +=       C3B[15] * dsnlm_dc[dsnlm_i+15] * fn * dblm_z[15] + 
@@ -1023,7 +990,7 @@ static __device__ __forceinline__ void scd_get_f12_4(
             2.0 * s[6] * fn12[k] * rij_Lsq * dblm_z[21] + 
             2.0 * s[7] * fn12[k] * rij_Lsq * dblm_z[22] + 
             2.0 * s[8] * fn12[k] * rij_Lsq * dblm_z[23];
-    f12k[k_idx + 3] += 2.0 * Fp * scd_r12[3] * tmpz;
+    f12k[k ] += 2.0 * Fp * scd_r12[3] * tmpz;
 
     // if (n1==0 and n2==0 and k == 0){
     //   printf("\tscd L=4 n1=%d n2=%d s0=%lf s1=%lf s2=%lf s3=%lf s4=%lf s5=%lf s6=%lf s7=%lf s8=%lf fnp=%lf fn=%lf Fp=%lf b40=%lf b41=%lf b42=%lf b43=%lf b44=%lf b45=%lf b46=%lf b47=%lf b48=%lf dqr=%lf dqx=%lf dqy=%lf dqz=%lf\n", 
@@ -1053,40 +1020,44 @@ static __device__ __forceinline__ void scd_get_f12_1_J(
   const double fn,
   const double fnp,
   const double Fp,
+  const int n_max_angular,
   const int n_base_angular, 
   const int dsnlm_start_idx,
   const int type_j,
   const int ntypes,
   const int n1, 
   const int n2,
+  const int* __restrict__ uniq_type,
+  const int len_map,
   double *f12k)
 { //l = 1
   int k_idx = 0;
-  for (int j = 0; j < ntypes; j++){
+  for (int uj =0; uj < len_map; uj++) {
+    int j = uniq_type[uj];
     if (type_j == j) continue;
     int dsnlm_idx = dsnlm_start_idx + j * n_base_angular * NUM_OF_ABC;
-    int k_start_idx = j * n_base_angular * 4;
+    int k_start_idx = uj * n_base_angular;
     for(int k=0; k < n_base_angular; k++) {
       int dsnlm_i = dsnlm_idx + k * NUM_OF_ABC;
       double tmpr = 0.0, tmpx = 0.0, tmpy = 0.0, tmpz = 0.0;
-      k_idx = k_start_idx + k * 4;
+      k_idx = k_start_idx + k;
       // 左边项 rij
       tmpr +=       C3B[0] * dsnlm_dc[dsnlm_i]   * fnp * blm[0]; 
       tmpr += 2.0 * C3B[1] * dsnlm_dc[dsnlm_i+1] * fnp * blm[1];
       tmpr += 2.0 * C3B[2] * dsnlm_dc[dsnlm_i+2] * fnp * blm[2];
-      f12k[k_idx + 0] += 2.0 * Fp * scd_r12[0] * tmpr;// 可以考虑移出去
+      f12k[k_idx ] += 2.0 * Fp * scd_r12[0] * tmpr;// 可以考虑移出去
 
       // xij
       tmpx += 2.0 * C3B[1] * dsnlm_dc[dsnlm_i+1] * fn; // dblm/dxij b10 b12 为0
-      f12k[k_idx + 1] += 2.0 * Fp * scd_r12[1] * tmpx;
+      f12k[k_idx ] += 2.0 * Fp * scd_r12[1] * tmpx;
 
       // yij
       tmpy += 2.0 * C3B[2] * dsnlm_dc[dsnlm_i+2] * fn;
-      f12k[k_idx + 2] += 2.0 * Fp * scd_r12[2] * tmpy;
+      f12k[k_idx ] += 2.0 * Fp * scd_r12[2] * tmpy;
 
       // zij
       tmpz += C3B[0] * dsnlm_dc[dsnlm_i] * fn;
-      f12k[k_idx + 3] += 2.0 * Fp * scd_r12[3] * tmpz;
+      f12k[k_idx ] += 2.0 * Fp * scd_r12[3] * tmpz;
 
       // if (n1==0 and n2==0 and k == 0){
       //   printf("\tscd_J L=1 n1=%d n2=%d k=%d s0=%lf s1=%lf s2=%lf fnp=%lf fn=%lf Fp=%lf fn12[%d]=%lf fnp12[%d]=%lf rij_Lsq=%lf rij_L2sq=%lf b10=%lf b11=%lf b12=%lf dqr=%lf dqx=%lf dqy=%lf dqz=%lf\n", 
@@ -1115,12 +1086,15 @@ static __device__ __forceinline__ void scd_get_f12_4body_J(
   const double fn,
   const double fnp,
   const double Fp,
+  const int n_max_angular,
   const int n_base_angular,
   const int dsnlm_start_idx, 
   const int type_j,
   const int ntypes,
   const int n1, 
   const int n2,
+  const int* __restrict__ uniq_type,
+  const int len_map,
   double *f12k)
 {
   // L = 2 c3b 3 4 5 6 7
@@ -1150,14 +1124,15 @@ static __device__ __forceinline__ void scd_get_f12_4body_J(
   dnlm_dzij[4] = 0.0;
   double dnlm_dc[5] = {0.0};
   int k_idx = 0;
-  for (int j = 0; j < ntypes; j++){  
+  for (int uj =0; uj < len_map; uj++) {
+    int j = uniq_type[uj];
     if (type_j == j) continue;
     int dsnlm_idx = dsnlm_start_idx + j * n_base_angular * NUM_OF_ABC;
-    int k_start_id = j * n_base_angular * 4;
+    int k_start_id = uj * n_base_angular;
     for(int k=0; k < n_base_angular; k++) {
       int dsnlm_i = dsnlm_idx + k * NUM_OF_ABC;
       double tmpr = 0.0, tmpx = 0.0, tmpy = 0.0, tmpz = 0.0;
-      k_idx = k_start_id + k * 4;
+      k_idx = k_start_id + k;
       dnlm_dc[0] = dsnlm_dc[dsnlm_i + 3];
       dnlm_dc[1] = dsnlm_dc[dsnlm_i + 4];
       dnlm_dc[2] = dsnlm_dc[dsnlm_i + 5];
@@ -1199,7 +1174,7 @@ static __device__ __forceinline__ void scd_get_f12_4body_J(
         dnlm_dc[1] * dnlm_drij[2] * s[4] + s[1] * dnlm_drij[2] * dnlm_dc[4] +
         dnlm_dc[1] * s[2] * dnlm_drij[4] + s[1] * dnlm_dc[2] * dnlm_drij[4]
       );
-      f12k[k_idx + 0] += Fp * scd_r12[0] * tmpr;
+      f12k[k_idx ] += Fp * scd_r12[0] * tmpr;
       // dxij
       // d0
       tmpx += 3.0 * C4B[0] * (
@@ -1235,7 +1210,7 @@ static __device__ __forceinline__ void scd_get_f12_4body_J(
         dnlm_dc[1] * dnlm_dxij[2] * s[4] + s[1] * dnlm_dxij[2] * dnlm_dc[4] +
         dnlm_dc[1] * s[2] * dnlm_dxij[4] + s[1] * dnlm_dc[2] * dnlm_dxij[4]
       );    
-      f12k[k_idx + 1] += Fp * scd_r12[1] * tmpx;
+      f12k[k_idx ] += Fp * scd_r12[1] * tmpx;
 
       // dyij
       // d0
@@ -1272,7 +1247,7 @@ static __device__ __forceinline__ void scd_get_f12_4body_J(
         dnlm_dc[1] * dnlm_dyij[2] * s[4] + s[1] * dnlm_dyij[2] * dnlm_dc[4] +
         dnlm_dc[1] * s[2] * dnlm_dyij[4] + s[1] * dnlm_dc[2] * dnlm_dyij[4]
       );    
-      f12k[k_idx + 2] += Fp * scd_r12[2] * tmpy;
+      f12k[k_idx ] += Fp * scd_r12[2] * tmpy;
 
       // dzij
       // d0
@@ -1309,7 +1284,7 @@ static __device__ __forceinline__ void scd_get_f12_4body_J(
         dnlm_dc[1] * dnlm_dzij[2] * s[4] + s[1] * dnlm_dzij[2] * dnlm_dc[4] +
         dnlm_dc[1] * s[2] * dnlm_dzij[4] + s[1] * dnlm_dc[2] * dnlm_dzij[4]
       );    
-      f12k[k_idx + 3] += Fp * scd_r12[3] * tmpz;
+      f12k[k_idx ] += Fp * scd_r12[3] * tmpz;
     }
   }
 }
@@ -1333,12 +1308,15 @@ static __device__ __forceinline__ void scd_get_f12_5body_J(
   const double fn,
   const double fnp,
   const double Fp,
+  const int n_max_angular,
   const int n_base_angular,
   const int dsnlm_start_idx,
   const int type_j,
   const int ntypes,
   const int n1, 
   const int n2,
+  const int* __restrict__ uniq_type,
+  const int len_map,
   double *f12k
 )
 {
@@ -1370,14 +1348,15 @@ static __device__ __forceinline__ void scd_get_f12_5body_J(
   double ds1s2_c = 0.0;
   double d_tmp = 0.0;
   int k_idx = 0;
-  for (int j = 0; j < ntypes; j++){  
+  for (int uj =0; uj < len_map; uj++) {
+    int j = uniq_type[uj];
     if (type_j == j) continue;
     int dsnlm_idx = dsnlm_start_idx + j * n_base_angular * NUM_OF_ABC;
-    int k_start_id = j * n_base_angular * 4;
+    int k_start_id = uj * n_base_angular;
     for(int k=0; k < n_base_angular; k++) {
       int dsnlm_i = dsnlm_idx + k * NUM_OF_ABC;
       double tmpr = 0.0, tmpx = 0.0, tmpy = 0.0, tmpz = 0.0;
-      k_idx = k_start_id + k * 4;
+      k_idx = k_start_id + k;
       dnlm_dc[0] = dsnlm_dc[dsnlm_i + 0];
       dnlm_dc[1] = dsnlm_dc[dsnlm_i + 1];
       dnlm_dc[2] = dsnlm_dc[dsnlm_i + 2];
@@ -1393,7 +1372,7 @@ static __device__ __forceinline__ void scd_get_f12_5body_J(
         s[0] * dnlm_drij[0] * ds1s2_c + 2.0 * s[0] * dnlm_dc[0] * ds1s2 + s2[0] * d_tmp);
       // d2
       tmpr += 4.0 * C5B[2] * (ds1s2_c * ds1s2 + (s2[1] + s2[2]) * d_tmp);
-      f12k[k_idx + 0] += Fp * scd_r12[0] * tmpr;
+      f12k[k_idx ] += Fp * scd_r12[0] * tmpr;
 
       // dxij
       // d0
@@ -1407,7 +1386,7 @@ static __device__ __forceinline__ void scd_get_f12_5body_J(
         s[0] * dnlm_dxij[0] * ds1s2_c + 2.0 * s[0] * dnlm_dc[0] * ds1s2 + s2[0] * d_tmp);
       // d2
       tmpx += 4.0 * C5B[2] * (ds1s2_c * ds1s2 + (s2[1] + s2[2]) * d_tmp);
-      f12k[k_idx + 1] += Fp * scd_r12[1] * tmpx;
+      f12k[k_idx ] += Fp * scd_r12[1] * tmpx;
 
       // dyij
       // d0
@@ -1421,7 +1400,7 @@ static __device__ __forceinline__ void scd_get_f12_5body_J(
         s[0] * dnlm_dyij[0] * ds1s2_c + 2.0 * s[0] * dnlm_dc[0] * ds1s2 + s2[0] * d_tmp);
       // d2
       tmpy += 4.0 * C5B[2] * (ds1s2_c * ds1s2 + (s2[1] + s2[2]) * d_tmp);
-      f12k[k_idx + 2] += Fp * scd_r12[2] * tmpy;
+      f12k[k_idx ] += Fp * scd_r12[2] * tmpy;
 
       // dzij
       // d0
@@ -1435,7 +1414,7 @@ static __device__ __forceinline__ void scd_get_f12_5body_J(
         s[0] * dnlm_dzij[0] * ds1s2_c + 2.0 * s[0] * dnlm_dc[0] * ds1s2 + s2[0] * d_tmp);
       // d2
       tmpz += 4.0 * C5B[2] * (ds1s2_c * ds1s2 + (s2[1] + s2[2]) * d_tmp);
-      f12k[k_idx + 3] += Fp * scd_r12[3] * tmpz;
+      f12k[k_idx ] += Fp * scd_r12[3] * tmpz;
     }
   }
   // if (n1==0 and n2==0){
@@ -1463,52 +1442,56 @@ static __device__ __forceinline__ void scd_get_f12_2_J(
   const double fn,
   const double fnp,
   const double Fp,
+  const int n_max_angular,
   const int n_base_angular, 
   const int dsnlm_start_idx,
   const int type_j,
   const int ntypes,
   const int n1, 
   const int n2,
+  const int* __restrict__ uniq_type,
+  const int len_map,
   double *f12k
   )
 {
   // L = 2 c3b 3 4 5 6 7
-  int k_idx = 0;
-  for (int j = 0; j < ntypes; j++){  
+  for (int uj =0; uj < len_map; uj++) {
+    int j = uniq_type[uj];
     if (type_j == j) continue;
     int dsnlm_idx = dsnlm_start_idx + j * n_base_angular * NUM_OF_ABC;
-    int k_start_idx = j * n_base_angular * 4;    
+    int k_start_idx = uj * n_base_angular;
+    int k_idx = 0;
     for(int k=0; k < n_base_angular; k++) {
       int dsnlm_i = dsnlm_idx + k * NUM_OF_ABC;
       double tmpr = 0.0, tmpx = 0.0, tmpy = 0.0, tmpz = 0.0;
-      k_idx = k_start_idx + k * 4;
+      k_idx = k_start_idx + k;
       // 左边项 rij
       tmpr +=  C3B[3] * dsnlm_dc[dsnlm_i+3] * (fnp * blm[3] + fn * dblm_r[3]) + 
                     2.0 * C3B[4] * dsnlm_dc[dsnlm_i+4] * fnp * blm[4] + 
                     2.0 * C3B[5] * dsnlm_dc[dsnlm_i+5] * fnp * blm[5] + 
                     2.0 * C3B[6] * dsnlm_dc[dsnlm_i+6] * fnp * blm[6] +
                     2.0 * C3B[7] * dsnlm_dc[dsnlm_i+7] * fnp * blm[7]; 
-      f12k[k_idx + 0] += 2.0 * Fp * scd_r12[0] * tmpr;// 可以考虑移出去
+      f12k[k_idx ] += 2.0 * Fp * scd_r12[0] * tmpr;// 可以考虑移出去
 
       // 左边项 xij
       tmpx += 
                     2.0 * C3B[4] * dsnlm_dc[dsnlm_i+4] * fn * dblm_x[4] + 
                     2.0 * C3B[6] * dsnlm_dc[dsnlm_i+6] * fn * dblm_x[6] +
                     2.0 * C3B[7] * dsnlm_dc[dsnlm_i+7] * fn * dblm_x[7];     
-      f12k[k_idx + 1] += 2.0 * Fp * scd_r12[1] * tmpx;
+      f12k[k_idx ] += 2.0 * Fp * scd_r12[1] * tmpx;
 
       // 左边项 yij
       tmpy += 
                     2.0 * C3B[5] * dsnlm_dc[dsnlm_i+5] * fn * dblm_y[5] + 
                     2.0 * C3B[6] * dsnlm_dc[dsnlm_i+6] * fn * dblm_y[6] +
                     2.0 * C3B[7] * dsnlm_dc[dsnlm_i+7] * fn * dblm_y[7];     
-      f12k[k_idx + 2] += 2.0 * Fp * scd_r12[2] * tmpy;
+      f12k[k_idx ] += 2.0 * Fp * scd_r12[2] * tmpy;
       
       // 左边项 zij
       tmpz +=  C3B[3] * dsnlm_dc[dsnlm_i+3] * fn * dblm_z[3] + 
                     2.0 * C3B[4] * dsnlm_dc[dsnlm_i+4] * fn * dblm_z[4] + 
                     2.0 * C3B[5] * dsnlm_dc[dsnlm_i+5] * fn * dblm_z[5];     
-      f12k[k_idx + 3] += 2.0 * Fp * scd_r12[3] * tmpz;
+      f12k[k_idx ] += 2.0 * Fp * scd_r12[3] * tmpz;
 
       // if (n1==0 and n2==0 and k == 0){
       //   printf("\tscd_J L=2 n1=%d n2=%d s0=%lf s1=%lf s2=%lf s3=%lf s4=%lf fnp=%lf fn=%lf Fp=%lf b20=%lf b21=%lf b22=%lf b23=%lf b24=%lf dqr=%lf dqx=%lf dqy=%lf dqz=%lf\n", 
@@ -1538,24 +1521,28 @@ static __device__ __forceinline__ void scd_get_f12_3_J(
   const double fn,
   const double fnp,
   const double Fp,
+  const int n_max_angular,
   const int n_base_angular, 
   const int dsnlm_start_idx,
   const int type_j,
   const int ntypes,
   const int n1, 
   const int n2,
+  const int* __restrict__ uniq_type,
+  const int len_map,
   double *f12k)
 {
   // L = 3 c3b 8 9 10 11 12 13 14  s 0 1 2 3 4 5 6
   int k_idx = 0;
-  for (int j = 0; j < ntypes; j++){  
+  for (int uj =0; uj < len_map; uj++) {
+    int j = uniq_type[uj];
     if (type_j == j) continue;
     int dsnlm_idx = dsnlm_start_idx + j * n_base_angular * NUM_OF_ABC;
-    int k_start_idx = j * n_base_angular * 4;   
+    int k_start_idx = uj * n_base_angular;   
     for(int k=0; k < n_base_angular; k++) {
       int dsnlm_i = dsnlm_idx + k * NUM_OF_ABC;
       double tmpr = 0.0, tmpx = 0.0, tmpy = 0.0, tmpz = 0.0;
-      k_idx = k_start_idx + k * 4;
+      k_idx = k_start_idx + k;
       // 左边项 rij
       tmpr +=         C3B[8]  * dsnlm_dc[dsnlm_i+8] * (fnp * blm[8]  + fn * dblm_r[8]) + 
                 2.0 * C3B[9]  * dsnlm_dc[dsnlm_i+9] * (fnp * blm[9]  + fn * dblm_r[9]) + 
@@ -1564,7 +1551,7 @@ static __device__ __forceinline__ void scd_get_f12_3_J(
                 2.0 * C3B[12] * dsnlm_dc[dsnlm_i+12] *  fnp * blm[12] + // dblm/drij = 0
                 2.0 * C3B[13] * dsnlm_dc[dsnlm_i+13] *  fnp * blm[13] + // dblm/drij = 0
                 2.0 * C3B[14] * dsnlm_dc[dsnlm_i+14] *  fnp * blm[14];  // dblm/drij = 0
-      f12k[k_idx + 0] += 2.0 * Fp * scd_r12[0] * tmpr;// 可以考虑移出去
+      f12k[k_idx ] += 2.0 * Fp * scd_r12[0] * tmpr;// 可以考虑移出去
 
       // 左边项 xij
       tmpx +=       //C3B[8]  * dsnlm_dc[dsnlm_i+8]  * fn * dblm_x[8] +  
@@ -1574,7 +1561,7 @@ static __device__ __forceinline__ void scd_get_f12_3_J(
                 2.0 * C3B[12] * dsnlm_dc[dsnlm_i+12] * fn * dblm_x[12] + 
                 2.0 * C3B[13] * dsnlm_dc[dsnlm_i+13] * fn * dblm_x[13] +
                 2.0 * C3B[14] * dsnlm_dc[dsnlm_i+14] * fn * dblm_x[14];     
-      f12k[k_idx + 1] += 2.0 * Fp * scd_r12[1] * tmpx;
+      f12k[k_idx ] += 2.0 * Fp * scd_r12[1] * tmpx;
 
       // 左边项 yij
       tmpy +=   //       C3B[8] * dsnlm_dc[dsnlm_i+8]  * fn * dblm_y[8] +  
@@ -1584,7 +1571,7 @@ static __device__ __forceinline__ void scd_get_f12_3_J(
                 2.0 * C3B[12] * dsnlm_dc[dsnlm_i+12] * fn * dblm_y[12] +
                 2.0 * C3B[13] * dsnlm_dc[dsnlm_i+13] * fn * dblm_y[13] +
                 2.0 * C3B[14] * dsnlm_dc[dsnlm_i+14] * fn * dblm_y[14];     
-      f12k[k_idx + 2] += 2.0 * Fp * scd_r12[2] * tmpy;
+      f12k[k_idx ] += 2.0 * Fp * scd_r12[2] * tmpy;
 
       // 左边项 zij
       tmpz +=         C3B[8]  * dsnlm_dc[dsnlm_i+8]  * fn * dblm_z[8] +  
@@ -1594,7 +1581,7 @@ static __device__ __forceinline__ void scd_get_f12_3_J(
                 2.0 * C3B[12] * dsnlm_dc[dsnlm_i+12] * fn * dblm_z[12];
                 // 2.0 * C3B[13] * dsnlm_dc[dsnlm_i+13] * fn  * dblm_z[13] + * 0.0 +
                 // 2.0 * C3B[14] * dsnlm_dc[dsnlm_i+14] * fn  * dblm_z[14] + * 0.0;     
-      f12k[k_idx + 3] += 2.0 * Fp * scd_r12[3] * tmpz;
+      f12k[k_idx ] += 2.0 * Fp * scd_r12[3] * tmpz;
       // if (n1==0 and n2==0 and k == 0){
       //   printf("\tscd_J L=3 n1=%d n2=%d s0=%lf s1=%lf s2=%lf s3=%lf s4=%lf s5=%lf s6=%lf fnp=%lf fn=%lf Fp=%lf b30=%lf b31=%lf b32=%lf b33=%lf b34=%lf b35=%lf b36=%lf dqr=%lf dqx=%lf dqy=%lf dqz=%lf\n", 
       //           n1, n2, s[0], s[1]*2.0, s[2]*2.0, s[3]*2.0, s[4]*2.0, s[5]*2.0, s[6]*2.0, fnp, fn, Fp, blm[8], blm[9], blm[10], blm[11], blm[12], blm[13], blm[14], tmpr, tmpx, tmpy, tmpz);
@@ -1623,23 +1610,27 @@ static __device__ __forceinline__ void scd_get_f12_4_J(
   const double fn,
   const double fnp,
   const double Fp,
+  const int n_max_angular,
   const int n_base_angular, 
   const int dsnlm_start_idx,
   const int type_j,
   const int ntypes,
   const int n1, 
   const int n2,
+  const int* __restrict__ uniq_type,
+  const int len_map,
   double *f12k)
 {
   int k_idx = 0;
-  for (int j = 0; j < ntypes; j++){  
+  for (int uj =0; uj < len_map; uj++) {
+    int j = uniq_type[uj];
     if (type_j == j) continue;
     int dsnlm_idx = dsnlm_start_idx + j * n_base_angular * NUM_OF_ABC;
-    int k_start_idx = j * n_base_angular * 4;   
+    int k_start_idx = uj * n_base_angular;   
     for(int k=0; k < n_base_angular; k++) {
       int dsnlm_i = dsnlm_idx + k * NUM_OF_ABC;
       double tmpr = 0.0, tmpx = 0.0, tmpy = 0.0, tmpz = 0.0;
-      k_idx = k_start_idx + k * 4;
+      k_idx = k_start_idx + k;
       // 左边项 rij
       tmpr +=       C3B[15] * dsnlm_dc[dsnlm_i+15] * (fnp * blm[15] + fn * dblm_r[15]) + 
               2.0 * C3B[16] * dsnlm_dc[dsnlm_i+16] * (fnp * blm[16] + fn * dblm_r[16]) + 
@@ -1650,7 +1641,7 @@ static __device__ __forceinline__ void scd_get_f12_4_J(
               2.0 * C3B[21] * dsnlm_dc[dsnlm_i+21] *  fnp * blm[21] +
               2.0 * C3B[22] * dsnlm_dc[dsnlm_i+22] *  fnp * blm[22] +
               2.0 * C3B[23] * dsnlm_dc[dsnlm_i+23] *  fnp * blm[23];
-      f12k[k_idx + 0] += 2.0 * Fp * scd_r12[0] * tmpr;// 可以考虑移出去
+      f12k[k_idx ] += 2.0 * Fp * scd_r12[0] * tmpr;// 可以考虑移出去
       // 左边项 xij
       tmpx +=       C3B[15] * dsnlm_dc[dsnlm_i+15] * fn * dblm_x[15] + 
               2.0 * C3B[16] * dsnlm_dc[dsnlm_i+16] * fn * dblm_x[16] + 
@@ -1662,7 +1653,7 @@ static __device__ __forceinline__ void scd_get_f12_4_J(
               2.0 * C3B[22] * dsnlm_dc[dsnlm_i+22] * fn * dblm_x[22] + 
               2.0 * C3B[23] * dsnlm_dc[dsnlm_i+23] * fn * dblm_x[23];
 
-      f12k[k_idx + 1] += 2.0 * Fp * scd_r12[1] * tmpx;
+      f12k[k_idx ] += 2.0 * Fp * scd_r12[1] * tmpx;
       // 左边项 yij
       tmpy +=       C3B[15] * dsnlm_dc[dsnlm_i+15] * fn * dblm_y[15] + 
               2.0 * C3B[16] * dsnlm_dc[dsnlm_i+16] * fn * dblm_y[16] + 
@@ -1674,7 +1665,7 @@ static __device__ __forceinline__ void scd_get_f12_4_J(
               2.0 * C3B[22] * dsnlm_dc[dsnlm_i+22] * fn * dblm_y[22] + 
               2.0 * C3B[23] * dsnlm_dc[dsnlm_i+23] * fn * dblm_y[23];
 
-      f12k[k_idx + 2] += 2.0 * Fp * scd_r12[2] * tmpy;
+      f12k[k_idx ] += 2.0 * Fp * scd_r12[2] * tmpy;
       // 左边项 zij
       tmpz +=       C3B[15] * dsnlm_dc[dsnlm_i+15] * fn * dblm_z[15] + 
               2.0 * C3B[16] * dsnlm_dc[dsnlm_i+16] * fn * dblm_z[16] + 
@@ -1685,7 +1676,7 @@ static __device__ __forceinline__ void scd_get_f12_4_J(
               2.0 * C3B[21] * dsnlm_dc[dsnlm_i+21] * fn * dblm_z[21] + 
               2.0 * C3B[22] * dsnlm_dc[dsnlm_i+22] * fn * dblm_z[22] + 
               2.0 * C3B[23] * dsnlm_dc[dsnlm_i+23] * fn * dblm_z[23];
-      f12k[k_idx + 3] += 2.0 * Fp * scd_r12[3] * tmpz;
+      f12k[k_idx ] += 2.0 * Fp * scd_r12[3] * tmpz;
 
       // if (n1==0 and n2==0 and k == 0){
       //   printf("\tscd_J L=4 n1=%d n2=%d s0=%lf s1=%lf s2=%lf s3=%lf s4=%lf s5=%lf s6=%lf s7=%lf s8=%lf fnp=%lf fn=%lf Fp=%lf b40=%lf b41=%lf b42=%lf b43=%lf b44=%lf b45=%lf b46=%lf b47=%lf b48=%lf dqr=%lf dqx=%lf dqy=%lf dqz=%lf\n", 
@@ -1723,7 +1714,11 @@ static __device__ __forceinline__ void scd_accumulate_f12(
   const int dc_start_idx,
   const int dsnlm_start_idx,
   const int n1,
-  const int n2) // i-> [ntype, nmax, nbase]-> [ntyp, ]
+  const int n2,
+  const int* __restrict__ uniq_map,
+  const int* __restrict__ uniq_type,
+  const int len_map
+) // i-> [ntype, nmax, nbase]-> [ntyp, ]
 {
   const double d12inv = 1.0 / d12;
   // l = 1
@@ -1739,13 +1734,13 @@ static __device__ __forceinline__ void scd_accumulate_f12(
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s1, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3],
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k+(uniq_map[type_j]*n_base_angular));
 
   scd_get_f12_1_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s1, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3],
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_max_angular, n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, uniq_type, len_map, f12k);
 
   // l = 2
   fnp = fnp * d12inv - fn * d12inv * d12inv;
@@ -1763,13 +1758,13 @@ static __device__ __forceinline__ void scd_accumulate_f12(
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s2, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+1],
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k+(uniq_map[type_j]*n_base_angular));
 
   scd_get_f12_2_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s2, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+1],
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_max_angular, n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, uniq_type, len_map, f12k);
 
   // l = 3
   fnp = fnp * d12inv - fn * d12inv * d12inv;
@@ -1788,13 +1783,13 @@ static __device__ __forceinline__ void scd_accumulate_f12(
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s3, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+2],
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k+(uniq_map[type_j]*n_base_angular));
 
   scd_get_f12_3_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s3, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+2],
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_max_angular, n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, uniq_type, len_map, f12k);
 
   // l = 4
   fnp = fnp * d12inv - fn * d12inv * d12inv;
@@ -1815,13 +1810,13 @@ static __device__ __forceinline__ void scd_accumulate_f12(
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s4, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+3], 
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k+(uniq_map[type_j]*n_base_angular));
 
   scd_get_f12_4_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s4, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+3], 
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_max_angular, n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, uniq_type, len_map, f12k);
 
 }
 
@@ -1853,7 +1848,10 @@ static __device__ __forceinline__ void scd_accumulate_f12_with_4body(
   const int dc_start_idx,
   const int dsnlm_start_idx,
   const int n1,
-  const int n2)
+  const int n2,
+  const int* __restrict__ uniq_map,
+  const int* __restrict__ uniq_type,
+  const int len_map)
 {
   const double d12inv = 1.0 / d12;
   double rij_Lsq = d12inv;
@@ -1869,13 +1867,13 @@ static __device__ __forceinline__ void scd_accumulate_f12_with_4body(
               blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
               scd_r12, dsnlm_dc, s1, r12, 
               d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3],
-              n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+              n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k+(uniq_map[type_j]*n_base_angular));
 
   scd_get_f12_1_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s1, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3],
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_max_angular, n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, uniq_type, len_map, f12k);
 
   // l = 2
   fnp = fnp * d12inv - fn * d12inv * d12inv;
@@ -1893,13 +1891,13 @@ static __device__ __forceinline__ void scd_accumulate_f12_with_4body(
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s2, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n_max_angular * lmax_3 + n],
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k+(uniq_map[type_j]*n_base_angular));
 
   scd_get_f12_4body_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s2, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n_max_angular * lmax_3 + n],
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_max_angular, n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, uniq_type, len_map, f12k);
 
   s2[0] *= C3B[3];
   s2[1] *= C3B[4];
@@ -1910,13 +1908,13 @@ static __device__ __forceinline__ void scd_accumulate_f12_with_4body(
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s2, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+1],
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k); 
+                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k+(uniq_map[type_j]*n_base_angular)); 
 
   scd_get_f12_2_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s2, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+1],
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_max_angular, n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, uniq_type, len_map, f12k);
   // l = 3
   fnp = fnp * d12inv - fn * d12inv * d12inv;
   fn = fn * d12inv;
@@ -1934,13 +1932,13 @@ static __device__ __forceinline__ void scd_accumulate_f12_with_4body(
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s3, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+2],
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k+(uniq_map[type_j]*n_base_angular));
 
   scd_get_f12_3_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s3, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+2],
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_max_angular, n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, uniq_type, len_map, f12k);
 
   // l = 4
   fnp = fnp * d12inv - fn * d12inv * d12inv;
@@ -1961,13 +1959,13 @@ static __device__ __forceinline__ void scd_accumulate_f12_with_4body(
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s4, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+3], 
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k+(uniq_map[type_j]*n_base_angular));
 
   scd_get_f12_4_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s4, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+3], 
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_max_angular, n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, uniq_type, len_map, f12k);
 }
 
 static __device__ __forceinline__ void scd_accumulate_f12_with_5body(
@@ -1998,7 +1996,10 @@ static __device__ __forceinline__ void scd_accumulate_f12_with_5body(
   const int dc_start_idx,
   const int dsnlm_start_idx,
   const int n1,
-  const int n2)
+  const int n2,
+  const int* __restrict__ uniq_map,
+  const int* __restrict__ uniq_type,
+  const int len_map)
 {
   const double d12inv = 1.0 / d12;
   double rij_Lsq = d12inv;
@@ -2012,13 +2013,13 @@ static __device__ __forceinline__ void scd_accumulate_f12_with_5body(
               blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
               scd_r12, dsnlm_dc, s1, r12, 
               d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n_max_angular * lmax_3 + n_max_angular + n], 
-              n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+              n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k+(uniq_map[type_j]*n_base_angular));
 
   scd_get_f12_5body_J(fn12, fnp12, 
               blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
               scd_r12, dsnlm_dc, s1, r12, 
               d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n_max_angular * lmax_3 + n_max_angular + n], 
-              n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+              n_max_angular, n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, uniq_type, len_map, f12k);
   
   s1[0] *= C3B[0];
   s1[1] *= C3B[1];
@@ -2027,13 +2028,13 @@ static __device__ __forceinline__ void scd_accumulate_f12_with_5body(
               blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
               scd_r12, dsnlm_dc, s1, r12, 
               d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3],
-              n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+              n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k+(uniq_map[type_j]*n_base_angular));
 
   scd_get_f12_1_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s1, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3],
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_max_angular, n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, uniq_type, len_map, f12k);
 
   // l = 2
   fnp = fnp * d12inv - fn * d12inv * d12inv;
@@ -2050,13 +2051,13 @@ static __device__ __forceinline__ void scd_accumulate_f12_with_5body(
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s2, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n_max_angular * lmax_3 + n],
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k+(uniq_map[type_j]*n_base_angular));
 
   scd_get_f12_4body_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s2, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n_max_angular * lmax_3 + n],
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_max_angular, n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, uniq_type, len_map, f12k);
 
   s2[0] *= C3B[3];
   s2[1] *= C3B[4];
@@ -2067,13 +2068,13 @@ static __device__ __forceinline__ void scd_accumulate_f12_with_5body(
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s2, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+1],
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k); 
+                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k+(uniq_map[type_j]*n_base_angular)); 
 
   scd_get_f12_2_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s2, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+1],
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_max_angular, n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, uniq_type, len_map, f12k);
 
   // l = 3
   fnp = fnp * d12inv - fn * d12inv * d12inv;
@@ -2092,13 +2093,13 @@ static __device__ __forceinline__ void scd_accumulate_f12_with_5body(
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s3, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+2],
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k+(uniq_map[type_j]*n_base_angular));
 
   scd_get_f12_3_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s3, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+2],
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_max_angular, n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, uniq_type, len_map, f12k);
 
   // l = 4
   fnp = fnp * d12inv - fn * d12inv * d12inv;
@@ -2119,12 +2120,12 @@ static __device__ __forceinline__ void scd_accumulate_f12_with_5body(
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s4, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+3], 
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k+(uniq_map[type_j]*n_base_angular));
   
   scd_get_f12_4_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s4, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+3], 
-                n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+                n_max_angular, n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, uniq_type, len_map, f12k);
 
 }

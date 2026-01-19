@@ -374,7 +374,8 @@ class NEP(nn.Module):
                                                         self.l_max_4b, 
                                                         self.l_max_5b, 
                                                         self.cutoff_angular,
-                                                        int(self.input_param.nep_param.fix_cij))[0]
+                                                        int(self.input_param.nep_param.fix_cij)
+                                                        )[0]
 
                 if self.train_2b:
                     feats = torch.concat([feat_2b, feat_3b], dim=-1)

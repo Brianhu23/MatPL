@@ -1,4 +1,3 @@
-#include "./utilities/common.cuh"
 #include "./utilities/nep_utilities.cuh"
 #include "./utilities/error.cuh"
 #include "./utilities/gpu_vector.cuh"
@@ -119,8 +118,6 @@ __global__ void reduce_kernel(
         if (n2 < 0) return;
         int tmp_grad_start = i * maxneighs * n_max_2b * n_base_2b
                                 + maxneighs_j * n_max_2b * n_base_2b;
-        // 临时变量用于存储计算结果
-        // double result[MAX_NUM_BEADS] = {0.0};
 
         // 第一步：根据NL_radial规约tmp_grad的maxneighs维度
         // 获取NL_radial中对应邻居的元素类型

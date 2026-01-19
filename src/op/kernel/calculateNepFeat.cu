@@ -1,4 +1,3 @@
-#include "./utilities/common.cuh"
 #include "./utilities/nep_utilities.cuh"
 #include <iostream>
 

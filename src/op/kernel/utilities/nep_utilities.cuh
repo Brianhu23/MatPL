@@ -35,12 +35,6 @@ __constant__ double C5B[3] = {0.026596810706114, 0.053193621412227, 0.0265968107
 const int SIZE_BOX_AND_INVERSE_BOX = 18; // (3 * 3) * 2
 const int MAX_NUM_N = 20;                // n_max+1 = 19+1
 
-#ifndef TYPESIN
-#define TYPESIN 20
-#endif
-const int TYPES = TYPESIN;
-
-// const int TYPES = 20;
 const int MAX_LMAX = 6; // 4 + 1 + 1
 const int MAX_DIM = MAX_NUM_N * 7;
 const int MAX_DIM_ANGULAR = MAX_NUM_N * 6;
@@ -665,7 +659,7 @@ static __device__ __forceinline__ void accumulate_f12(
   const double* s_rij_blm,
   double* f12,
   double* f12d,
-  double* dfeat_c3,
+  double* dfeat_c3_base,
   double* fn12,
   double* fnp12,
   const int type_j,
@@ -760,8 +754,8 @@ static __device__ __forceinline__ void accumulate_f12(
 
     tmp1 = Fp[n*lmax_3]*tmp1 + Fp[n*lmax_3+1]*tmp2 + Fp[n*lmax_3+2]*tmp3 + Fp[n*lmax_3+3]*tmp4;
     tmp1 = tmp1 * 2.0 * fn12[kk];
-    int dc_id = dc_start_idx + type_j * n_max_angular * n_base_angular + n*n_base_angular + kk;
-    dfeat_c3[dc_id] += tmp1;
+    // int dc_id = dc_start_idx + type_j * n_max_angular * n_base_angular + n*n_base_angular + kk;
+    dfeat_c3_base[kk] += tmp1;
   }
 }
 
@@ -776,7 +770,7 @@ static __device__ __forceinline__ void accumulate_f12_with_4body(
   const double* s_rij_blm,
   double* f12,
   double* f12d,
-  double* dfeat_c3,
+  double* dfeat_c3_base,
   double* fn12,
   double* fnp12,
   const int type_j,
@@ -911,8 +905,8 @@ static __device__ __forceinline__ void accumulate_f12_with_4body(
     tmp1 = Fp[n*lmax_3]*tmp1 + Fp[n*lmax_3+1]*tmp2 + Fp[n*lmax_3+2]*tmp3 + Fp[n*lmax_3+3]*tmp4;
     tmp1 = tmp1 * 2.0 * fn12[kk];
     tmp1 = tmp1 + tmp2_4b * Fp[n_max_angular * lmax_3 + n];
-    int dc_id = dc_start_idx + type_j * n_max_angular * n_base_angular + n*n_base_angular + kk;
-    dfeat_c3[dc_id] += tmp1;
+    // int dc_id = dc_start_idx + type_j * n_max_angular * n_base_angular + n*n_base_angular + kk;
+    dfeat_c3_base[kk] += tmp1;
   }
 }
 
@@ -927,7 +921,7 @@ static __device__ __forceinline__ void accumulate_f12_with_5body(
   const double* s_rij_blm,
   double* f12,
   double* f12d,
-  double* dfeat_c3,
+  double* dfeat_c3_base,
   double* fn12,
   double* fnp12,
   const int type_j,
@@ -1083,8 +1077,8 @@ static __device__ __forceinline__ void accumulate_f12_with_5body(
     tmp1 = tmp1 * 2.0 * fn12[kk];
     tmp1 = tmp1 + tmp2_4b * Fp[n_max_angular * lmax_3 + n];
     tmp1 = tmp1 + tmp1_5b * Fp[n_max_angular * lmax_3 + n_max_angular + n];
-    int dc_id = dc_start_idx + type_j * n_max_angular * n_base_angular + n*n_base_angular + kk;
-    dfeat_c3[dc_id] += tmp1;
+    dfeat_c3_base[kk] += tmp1;
+    // 
   }
 }
 

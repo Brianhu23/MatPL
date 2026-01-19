@@ -4,7 +4,6 @@
 # =============================================================================
 # Default to single-core compilation
 JOB_COUNT=1
-NEP_TYPES=20 # Default value is 20
 EXTRACT_ONLY=0 # Flag for -c option
 CLEAN_ALL=0
 VERSION=2025.3
@@ -19,7 +18,6 @@ show_help() {
     echo ""
     echo "Options:"
     echo "  -j NUM     Number of CPU cores for compilation (default: 1)"
-    echo "  -n NUM     Set NEP_TYPES value (default: 20)"
     echo "  -m nn      Compile Fortran modules (for Linear and NN models)"
     echo "  -u         Extract-only mode, exit after extraction"
     echo "  -c         Clear all compilation caches before compiling"
@@ -34,10 +32,6 @@ while getopts "j:n:m:uch" opt; do
     j)
       JOB_COUNT=$OPTARG
       echo "Using $JOB_COUNT CPU cores for compilation"
-      ;;
-    n)
-      NEP_TYPES=$OPTARG
-      echo "Using NEP_TYPES = $NEP_TYPES"
       ;;
     m)
       if [ "$OPTARG" = "nn" ]; then
@@ -551,7 +545,7 @@ if [ $op_change -eq 1 ] && [ $compile_errors -eq 0 ]; then
     CMP_OP_SCRIPT="${TMP_EXTRACT_DIR}/cmp_op.sh"
     if [ -f "$CMP_OP_SCRIPT" ]; then
         # Use default value 20 if -n parameter is not specified
-        bash "${CMP_OP_SCRIPT}" "${BASE_DIR}" "${VERSION}" "${MATPL_PREFIX}${VERSION}" "${CLEAN_ALL}" "${CPU_ONLY}" -j"${JOB_COUNT}" -n"${NEP_TYPES}"
+        bash "${CMP_OP_SCRIPT}" "${BASE_DIR}" "${VERSION}" "${MATPL_PREFIX}${VERSION}" "${CLEAN_ALL}" "${CPU_ONLY}" -j"${JOB_COUNT}"
         if [ $? -ne 0 ]; then
             echo "Error: OP compilation failed"
             compile_errors=1
@@ -582,7 +576,7 @@ if [ $lmp_change -eq 1 ] && [ $compile_errors -eq 0 ]; then
     CMP_LMPS_SCRIPT="${TMP_EXTRACT_DIR}/cmp_lmps.sh"
     if [ -f "$CMP_LMPS_SCRIPT" ]; then
         # Use default value 20 if -n parameter is not specified
-        bash "${CMP_LMPS_SCRIPT}" "${BASE_DIR}" "${CPU_ONLY}" "${VERSION}" "${CLEAN_ALL}" -j"${JOB_COUNT}" -n"${NEP_TYPES}"
+        bash "${CMP_LMPS_SCRIPT}" "${BASE_DIR}" "${CPU_ONLY}" "${VERSION}" "${CLEAN_ALL}" -j"${JOB_COUNT}"
         if [ $? -ne 0 ]; then
             echo "Error: LAMMPS compilation failed"
             compile_errors=1
@@ -650,7 +644,6 @@ if [ $compile_errors -eq 0 ]; then
     echo ""
     echo "Compilation parameters:"
     echo " CPU core count: $JOB_COUNT"
-    echo " NEP type count: $NEP_TYPES"
     echo " Compile Fortran: $([ "$COMPILE_FORTRAN" -eq 1 ] && echo "Yes" || echo "No")"
     
     # 输出 Fortran 相关警告
