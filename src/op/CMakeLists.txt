@@ -1,4 +1,25 @@
-add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
+execute_process(
+    COMMAND python3 -c "
+try:
+    import torch
+    if torch._C._GLIBCXX_USE_CXX11_ABI:
+        print('1')
+    else:
+        print('0')
+except:
+    print('0')  # 检测失败设置为0
+"
+    OUTPUT_VARIABLE TORCH_ABI
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+)
+
+if(TORCH_ABI STREQUAL "0")
+    message(STATUS "set _GLIBCXX_USE_CXX11_ABI=0")
+    add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
+else()
+    message(STATUS "set _GLIBCXX_USE_CXX11_ABI=1(default)")
+endif()
 
 # 1. Basic info
 cmake_minimum_required(VERSION 3.2 FATAL_ERROR)

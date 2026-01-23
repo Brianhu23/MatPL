@@ -36,7 +36,7 @@ class InputParam(object):
         self.max_neigh_num = get_parameter("max_neigh_num", json_input, 100)
         self.save_step = get_parameter("save_step", json_input, None)
         self.max_save_num = get_parameter("max_save_num", json_input, 10)
-        self.max_allow_atom_type = get_parameter("batch_max_types", json_input, 20)  # for nep multi batch training
+        self.max_allow_atom_type = get_parameter("batch_max_types", json_input, -1)  # for nep multi batch training
         self.profiling = get_parameter("profiling", json_input, False)#not realized
 
         self.set_feature_params(json_input)

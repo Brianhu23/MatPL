@@ -376,8 +376,6 @@ def train_KF(train_loader, model, criterion, optimizer, epoch, device, args:Inpu
 
     end = time.time()
     for i, sample in enumerate(train_loader):
-        if i % 100 != 0:
-            continue
         sample = {key: value.to(device) for key, value in sample.items()}
         nn_radial, nn_angular = CalcOps.calculate_maxneigh(
             sample["num_atom"],

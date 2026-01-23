@@ -85,15 +85,13 @@ class Inference(object):
         model.eval()
         return model, dp_param
 
-    def inference(self, structrue_file, format="config", atom_names=None, do_deviation=False): # for dp infer 
+    def inference(self, image_read, do_deviation=False): # for dp infer 
         model_config = self.model.config
         Ei = np.zeros(1)
         Egroup = 0
         nghost = 0
         # list_neigh, type_maps, atom_types, ImageDR = self.processed_data(structrue_file, model_config, Ei, Egroup, format, atom_names)
         # infer = Save_Data(data_path=structrue_file, format=format, atom_names=atom_names, train_ratio=1)
-
-        image_read = Config(data_path=structrue_file, format=format, atom_names=atom_names).images
         if not isinstance(image_read, list): # for lammps/dumps or movement .images will be list
             image_read = [image_read]
         input_atom_types = np.array(self.model_atom_type)
@@ -294,9 +292,10 @@ class Inference(object):
         data = torch.from_numpy(data).to(self.device)
         return data
 
-    def inference_nep_txt(self, structrue_file, format="pwmat/config", atom_names=None, do_deviation=False):
+    def inference_nep_txt(self, image_read, do_deviation=False):
         # infer = Save_Data(data_path=structrue_file, format=format)
-        image_read = Config(data_path=structrue_file, format=format, atom_names=atom_names).images
+        # structrue_file, format="pwmat/config", atom_names=None, 
+        # image_read = Config(data_path=structrue_file, format=format, atom_names=atom_names).images
         if not isinstance(image_read, list): # for lammps/dumps or movement .images will be list
             image_read = [image_read]
         input_atom_types = np.array(self.model_atom_type)

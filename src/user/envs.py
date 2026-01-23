@@ -48,6 +48,11 @@ def matpl_help():
             "command": "script",
             "description": "Convert DP ckpt force field files into libtorch format for LAMMPS simulations.",
             "example": "MatPL script dp_model.ckpt"
+        },
+        {
+            "command": "model_devi",
+            "description": "Calculate the deviation values ​​of multiple models (Support DP and NEP). The NEP model could be training files with the nep4.txt, nep5.txt, or suffixes cpkt.",
+            "example": "MatPL model_devi -m nep_model.ckpt nep_model2.ckpt nep4.txt ... -f extxyz -c test.xyz -s model_devi_result_file_save_name (default is matpl_model_devi.out)"
         }
     ]
 

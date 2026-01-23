@@ -1,6 +1,5 @@
 import os
 import numpy as np
-import torch
 from utils.atom_type_emb_dict import element_table
 from utils.json_operation import get_parameter
 from utils.nep_to_gpumd import get_atomic_name_from_str

@@ -34,7 +34,7 @@ from src.model.nep_net import NEP
 from src.optimizer.GKF import GKFOptimizer
 from src.optimizer.LKF import LKFOptimizer
 
-from src.pre_data.nep_data_loader import calculate_neighbor_num_max_min, calculate_neighbor_scaler, UniDataset, variable_length_collate_fn, variable_length_collate_fn_limit_mem, type_map, NepTestData
+from src.pre_data.nep_data_loader import calculate_neighbor_num_max_min, calculate_neighbor_scaler, UniDataset, variable_length_collate_fn, variable_length_collate_fn_nolimit, calculate_batch, type_map, NepTestData
 from src.PWMLFF.nep_mods.nep_trainer import train_KF, train, valid, save_checkpoint, predict
 from src.PWMLFF.dp_param_extract import load_atomtype_energyshift_from_checkpoint
 from src.user.input_param import InputParam
@@ -103,6 +103,7 @@ class nep_network:
                                             self.input_param.atom_type,
                                             cutoff_radial = self.input_param.nep_param.cutoff[0],
                                             cutoff_angular= self.input_param.nep_param.cutoff[1],
+                                            batch_max_types=self.input_param.max_allow_atom_type,
                                             cal_energy=True)
 
             valid_dataset = UniDataset(self.input_param.file_paths.valid_data_path, 
@@ -120,10 +121,19 @@ class nep_network:
                 train_dataset,
                 batch_size=self.input_param.optimizer_param.batch_size,
                 shuffle=self.input_param.data_shuffle,
-                # collate_fn= variable_length_collate_fn,
-                collate_fn=lambda batch: variable_length_collate_fn_limit_mem(batch, batch_max_types=self.input_param.max_allow_atom_type), 
+                collate_fn= variable_length_collate_fn, 
                 num_workers=self.input_param.workers,   
                 drop_last=True,
+                pin_memory=True,
+            )
+            max_batch = calculate_batch(train_dataset.max_atom_nums, 400) # 按照最大默认400个近邻取batchsize
+            forscaler_loader = torch.utils.data.DataLoader(
+                train_dataset,
+                batch_size=max_batch,
+                shuffle=self.input_param.data_shuffle,
+                collate_fn= variable_length_collate_fn_nolimit, 
+                num_workers=self.input_param.workers,   
+                drop_last=False,
                 pin_memory=True,
             )
             
@@ -139,7 +149,7 @@ class nep_network:
                     pin_memory=True,
                     drop_last=True
                 )
-            return energy_shift, train_loader, val_loader, train_dataset
+            return energy_shift, train_loader, val_loader, forscaler_loader
     
     '''
     description:
@@ -157,6 +167,27 @@ class nep_network:
     #     return davg_dstd_energy_shift
     
     def load_model_optimizer(self, energy_shift, avg_atom_num=1, iterations=1):
+        def _adjust_ckpt_keys(ckpt, new_ckpt):
+            keys = list(ckpt['state_dict'].keys())
+            new_dict = {}
+            q_scaler = None
+            module = "" if "q_scaler" in ckpt['state_dict'].keys() else "module."
+            if f'{module}q_scaler' in ckpt['state_dict'].keys(): # ckpt from MatPL-PRO single gpu training
+                for key in keys:
+                    if key in [f"{module}C3B", f"{module}C4B", f"{module}C5B", f"{module}atom_type_device", f"{module}max_NN_radial", f"{module}max_NN_angular"]:
+                        continue
+                    if key == f"{module}q_scaler":
+                        if type(ckpt['state_dict'][f'{module}q_scaler']) == torch.Tensor:
+                            q_scaler = np.array(ckpt['state_dict'][key].cpu().detach().tolist())
+                        else:
+                            q_scaler = ckpt['state_dict'][key]
+                    else:
+                        new_dict[f'{key.replace("module.", "")}'] = ckpt['state_dict'][key]
+                
+            ckpt['state_dict'] = new_dict
+            ckpt["q_scaler"] = q_scaler
+            return ckpt
+
         # create model 
         # when running evaluation, nothing needs to be done with davg.npy
         # if does not use CosineAnnealingWarmRestarts, avg_atom_num = 1
@@ -198,6 +229,7 @@ class nep_network:
                 self.input_param.optimizer_param.start_epoch = 1
             else:
                 self.input_param.optimizer_param.start_epoch = checkpoint["epoch"] + 1
+            checkpoint = _adjust_ckpt_keys(checkpoint, model) # 适配旧版本以及单卡多卡版本
             model.load_state_dict(checkpoint["state_dict"])
             
             if "max_neighbor" in checkpoint.keys():
@@ -311,17 +343,17 @@ class nep_network:
         return model, optimizer, scheduler
 
     def train(self):
-        energy_shift, train_loader, val_loader, train_datset = self.load_data()
+        energy_shift, train_loader, val_loader, forscaler_loader = self.load_data()
         #energy_shift is same as energy_shift of upper; atom_map is the user input order
-        model, optimizer, scheduler = self.load_model_optimizer(energy_shift, avg_atom_num=1, iterations=len(train_loader)) #train_datset.avg_image_atom
+        model, optimizer, scheduler = self.load_model_optimizer(energy_shift, avg_atom_num=1, iterations=len(train_loader)) #train_dataset.avg_image_atom
         
 
         # max_NN_radial, min_NN_radial, max_NN_angular, min_NN_angular = \
-        #                 calculate_neighbor_num_max_min(dataset=train_datset, device = self.device, num_workers=self.input_param.workers)
+        #                 calculate_neighbor_num_max_min(dataset=train_dataset, device = self.device, num_workers=self.input_param.workers)
         
         if model.q_scaler is None:
             q_scaler, max_NN_radial, min_NN_radial, max_NN_angular, min_NN_angular = calculate_neighbor_scaler(
-                            train_datset,
+                            forscaler_loader,
                             model.n_max_radial,
                             model.n_base_radial,
                             model.n_max_angular,
@@ -688,22 +720,18 @@ class nep_network:
         global calc
         calc = FindNeigh()
         calc.init_model(nep_txt_path)
-        # t1 = time.time()
-        # results = []
-        # for idx, image in enumerate(images):
-        #     result = self.process_image(idx, image)
-        #     results.append(result)
-        t2 = time.time()
-        with concurrent.futures.ProcessPoolExecutor(max_workers=cpu_count) as executor:
-            futures = [
-                executor.submit(self.process_image, idx, image)
-                for idx, image in enumerate(images)
-            ]
-            results = [future.result() for future in concurrent.futures.as_completed(futures)]
-        t3 = time.time()
-        # print("{} {}".format(t3-t2, t2-t1))
-        time1 = time.time()
-
+        results = []
+        if cpu_count == 1:
+            for idx, image in enumerate(images):
+                result = self.process_image(idx, image)
+                results.append(result)
+        else:
+            with concurrent.futures.ProcessPoolExecutor(max_workers=cpu_count) as executor:
+                futures = [
+                    executor.submit(self.process_image, idx, image)
+                    for idx, image in enumerate(images)
+                ]
+                results = [future.result() for future in concurrent.futures.as_completed(futures)]
         # Collecting results
         etot_rmse, etot_atom_rmse, ei_rmse, force_rmse = [], [], [], []
         etot_label_list, etot_predict_list = [], []
@@ -780,10 +808,10 @@ class nep_network:
     '''
     def inference(self):
         # do inference
-        energy_shift, train_loader, val_loader, train_datset = self.load_data()
+        energy_shift, train_loader, val_loader, _ = self.load_data()
         model, optimizer,_ = self.load_model_optimizer(energy_shift)
         max_NN_radial, min_NN_radial, max_NN_angular, min_NN_angular = \
-                        calculate_neighbor_num_max_min(dataset=train_datset, device = self.device)
+                        calculate_neighbor_num_max_min(train_loader, device = self.device)
         
         model.max_NN_radial  = max(model.max_NN_radial, max_NN_radial)
         model.max_NN_angular = max(model.max_NN_angular, max_NN_angular)

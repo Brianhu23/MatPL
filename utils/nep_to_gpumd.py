@@ -110,18 +110,27 @@ def extract_model(nep_path:str):
     nn_list = []
     c_list = []
     q_list = []
+    if "q_scaler" in model['state_dict'].keys() or "module.q_scaler" in model['state_dict'].keys():
+        if "q_scaler" in model['state_dict'].keys():
+            module = ""
+        else:
+            module = 'module.' 
+        q_list.extend(model['state_dict'][f'{module}q_scaler'].cpu().detach().tolist())
+    else:
+        module = ""
+        q_list.extend(list(model['q_scaler']))
     for i in range(0, len(model_atom_type)):
-        nn_list.extend(list(model['state_dict']['fitting_net.{}.layers.0.weight'.format(i)].transpose(1, 0).flatten().cpu().detach().numpy()))
-        nn_list.extend((-model['state_dict']['fitting_net.{}.layers.0.bias'.format(i)]).flatten().cpu().detach().numpy())
-        nn_list.extend(model['state_dict']['fitting_net.{}.layers.1.weight'.format(i)].flatten().cpu().detach().numpy())
-        _last_bias = float(-model['state_dict']['fitting_net.{}.layers.1.bias'.format(i)])
+        nn_list.extend(list(model['state_dict'][f'{module}fitting_net.{i}.layers.0.weight'].transpose(1, 0).flatten().cpu().detach().numpy()))
+        nn_list.extend((-model['state_dict'][f'{module}fitting_net.{i}.layers.0.bias']).flatten().cpu().detach().numpy())
+        nn_list.extend(model['state_dict'][f'{module}fitting_net.{i}.layers.1.weight'].flatten().cpu().detach().numpy())
+        _last_bias = float(-model['state_dict'][f'{module}fitting_net.{i}.layers.1.bias'])
         nn_list.append(_last_bias)
 
     nn_list.append(0.0) #last common bais
-    c_list.extend(list(model['state_dict']['c_param_2'].permute(2, 3, 0, 1).flatten().cpu().detach().numpy()))
+    c_list.extend(list(model['state_dict'][f'{module}c_param_2'].permute(2, 3, 0, 1).flatten().cpu().detach().numpy()))
     if l_max[0] > 0:
-        c_list.extend(list(model['state_dict']['c_param_3'].permute(2, 3, 0, 1).flatten().cpu().detach().numpy()))
-    q_list.extend(list(model['q_scaler']))
+        c_list.extend(list(model['state_dict'][f'{module}c_param_3'].permute(2, 3, 0, 1).flatten().cpu().detach().numpy()))
+    
 
     # check param nums
     # feature nums

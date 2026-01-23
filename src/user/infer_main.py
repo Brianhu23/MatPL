@@ -3,6 +3,7 @@ from src.mods.infer import Inference
 import os 
 import glob
 import numpy as np
+from pwdata import Config
 from utils.nep_to_gpumd import get_atomic_name_from_number, check_atom_type_name
 def infer_main(sys_cmd:list[str]):
     ckpt_file = sys_cmd[0]
@@ -44,10 +45,11 @@ def infer_main(sys_cmd:list[str]):
     else:
         trajs = [structures_file]
     for ti, traj in enumerate(trajs):
+        image_read = Config(data_path=traj, format=format, atom_names=atom_types).images
         if infer.model_type == "DP":
-            infer.inference(traj, format, atom_types)
+            infer.inference(image_read)
         elif infer.model_type == "NEP":
-            infer.inference_nep_txt(traj, format, atom_types)
+            infer.inference_nep_txt(image_read)
 
 def model_devi(ckpt_file_list, structure_dir, format, save_path, atom_names:list[str]=None):
     # set atom_types in trajs
@@ -89,15 +91,15 @@ def model_devi(ckpt_file_list, structure_dir, format, save_path, atom_names:list
         force_i = {}
         ei_i = {}
         Etot_i = {}
+        image_read = Config(data_path=traj, format=format, atom_names=atom_types).images
         for id, model in enumerate(model_lists):
             force_i[id] = []
             ei_i[id] = []
             Etot_i[id] = []
-            
             if model.model_type == "DP":
-                _etot_list, _ei_list, _force_list, _virial_list = model.inference(traj, format, atom_names=atom_types, do_deviation=True)
+                _etot_list, _ei_list, _force_list, _virial_list = model.inference(image_read, do_deviation=True)
             elif model.model_type == "NEP":
-                _etot_list, _ei_list, _force_list, _virial_list = model.inference_nep_txt(traj, format, atom_names=atom_types, do_deviation=True)
+                _etot_list, _ei_list, _force_list, _virial_list = model.inference_nep_txt(image_read, do_deviation=True)
             
             for idj in range(0, len(_etot_list)):
                 force_i[id].append(_force_list[idj])
