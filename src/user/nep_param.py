@@ -75,7 +75,7 @@ class NepParam(object):
         self.basis_size = get_parameter("basis_size", nep_file_dict, [8, 8], out_format=2) # number of radial () and angular () basis functions
         if len(self.basis_size) != 2:
             raise Exception("the input 'basis_size' should has 2 values, such as [8, 8]")
-        if self.n_max[0] <=0 or self.n_max[0] >= 20 or self.n_max[1] <=0 or self.n_max[1] >= 20:
+        if self.basis_size[0] <=0 or self.basis_size[0] >= 20 or self.basis_size[1] <=0 or self.basis_size[1] >= 20:
             raise Exception("Error ! The input 'basis_size' value should: 0 < basis_size < 20")
         
         self.l_max = get_parameter("l_max", nep_file_dict, [4, 2, 1], out_format=2) # expansion order for angular terms
