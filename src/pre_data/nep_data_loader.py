@@ -5,7 +5,7 @@ from torch.utils.data import Dataset, DataLoader
 import torch
 from src.user.input_param import InputParam
 from pwdata import Config
-from utils.debug_operation import check_cuda_memory
+from src.utils.debug_operation import check_cuda_memory
 import time
 # from src.feature.nep_find_neigh.findneigh import FindNeigh
 from typing import Union, Optional
@@ -41,10 +41,12 @@ def variable_length_collate_fn(batch):
             unique_types = set(np.unique(atom_type_image))
             num_new_types = len(unique_types - current_types_set)
             
+            # 检查加入这个样本后是否会超过类型限制
             if max_allow_atom_type== -1 or len(current_types_set) + num_new_types <= max_allow_atom_type:
                 filtered_batch.append(sample)
                 current_types_set.update(unique_types)
             else:
+                # 如果加入这个样本会超过限制，跳过它
                 # print(f"Skip: adding this sample would exceed type limit. "
                 #       f"Current types: {len(current_types_set)}, "
                 #       f"New types: {num_new_types}, "
@@ -53,6 +55,7 @@ def variable_length_collate_fn(batch):
         else:
             # 如果没有 atom_type_image，默认保留
             filtered_batch.append(sample)
+
     # print(f"debug {len(current_types_set)}-{current_types_set}")
     if len(filtered_batch) == 0:
         return {}
@@ -81,6 +84,7 @@ def variable_length_collate_fn(batch):
     if "num_atom" in res and len(res["num_atom"]) > 0:
         res["num_atom_sum"] = res["num_atom"].cumsum(0).to(res["num_atom"].dtype)
     return res
+
 
 def variable_length_collate_fn_nolimit(batch):
     keys = batch[0].keys()
@@ -159,8 +163,8 @@ class UniDataset(Dataset):
         )
         self.image_list, self.total_images = self.__concatenate_data()
 
-        if self.total_images > 0:
-            data = self.__load_data(0)
+        # if self.total_images > 0:
+        #     data = self.__load_data(0)
         # print()
 
     def __concatenate_data(self):
@@ -357,13 +361,21 @@ Calculate the maximum and minimum neighbor numbers for radial and angular distri
 :return: None
 """
 def calculate_neighbor_num_max_min(
-                dataloader: DataLoader,
+                dataset: UniDataset, 
                 device: torch.device,
                 num_workers:int=0) -> None:
     max_radial = -1e10
     min_radial = 1e10
     max_angular = -1e10
     min_angular = 1e10
+    dataloader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=1024,
+        shuffle=False,
+        collate_fn=variable_length_collate_fn,
+        num_workers=num_workers,
+    )
+    
     for _, sample in tqdm(enumerate(dataloader), total=len(dataloader), desc="Calculating max neighbors"):
         sample = {key: value.to(device) for key, value in sample.items()}
         nn_radial, nn_angular = CalcOps.calculate_maxneigh(
@@ -372,9 +384,9 @@ def calculate_neighbor_num_max_min(
             sample["box_original"],
             sample["num_cell"],
             sample["position"],
-            dataloader.dataset.cutoff_radial,
-            dataloader.dataset.cutoff_angular,
-            len(dataloader.dataset.atom_types),
+            dataset.cutoff_radial,
+            dataset.cutoff_angular,
+            len(dataset.atom_types),
             sample["atom_type_map"],
             False
         )
@@ -405,8 +417,6 @@ def calculate_neighbor_scaler(
     min_radial = 1e10
     max_angular = -1e10
     min_angular = 1e10
-
-    t1 = time.time()
 
     dtype = dataloader.dataset.dtype
     weight_radial = 1 * torch.ones(
@@ -501,17 +511,15 @@ def calculate_neighbor_scaler(
         # check_cuda_memory(_, 2, "after calculate_scaler ",empty=False)
 
     # desc = torch.concat(tmp_desc, dim=0)
-    # qscaler_radial = 1.0 / (desc.amax(dim=0) - desc.amin(dim=0))
-    qscaler_radial = 1.0 / (global_max - global_min)
-    qscaler = qscaler_radial.tolist()
-    t2 = time.time()
+    # qscaler_radial = 1.0 / (global_max - global_min)
+    # qscaler = qscaler_radial.tolist()
     # print("scaler time {}", t2 - t1)
     # qscaler = []
     # qscaler.extend(qscaler_radial.tolist()) 
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    return qscaler, max_radial, min_radial, max_angular, min_angular
+    return global_max, global_min, max_radial, min_radial, max_angular, min_angular
 
 def calculate_batch(N, MN):
     if torch.cuda.is_available():
@@ -519,9 +527,9 @@ def calculate_batch(N, MN):
         memory_total_b = torch.cuda.get_device_properties(device).total_memory
         all = 0
         batch = 0
-        while all < memory_total_b:
+        while all < memory_total_b and batch < 1024:
             batch += 1
-            all += (2 * (N + N * MN + N * MN * 4) + N * 4 + N * 100) * 8 # (NN + NL + Rij + po) * 2 + N * 3 
+            all += (2 * (N + N * MN + N * MN * 4) + N * 4 + N * 100) * 8 * 1.2 # (NN + NL + Rij + po) * 2 + N * 3 
     else:
         batch = 512 # for cpu
     return batch

@@ -1,7 +1,7 @@
 import json
 import os
-from utils.json_operation import get_parameter, get_required_parameter
-from utils.file_operation import is_alive_atomic_energy
+from src.utils.json_operation import get_parameter, get_required_parameter
+from src.utils.file_operation import is_alive_atomic_energy
 
 class WorkFileStructure(object):
     '''

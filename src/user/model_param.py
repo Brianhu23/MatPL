@@ -1,4 +1,4 @@
-from utils.json_operation import get_parameter, get_required_parameter
+from src.utils.json_operation import get_parameter, get_required_parameter
 from src.user.nep_param import NepParam
 class NetParam(object):
     def __init__(self, net_type:str) -> None:

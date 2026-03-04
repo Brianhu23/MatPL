@@ -1,7 +1,7 @@
 import os
 import json
-from utils.json_operation import get_parameter, get_required_parameter
-from utils.nep_to_gpumd import get_atomic_name_from_str
+from src.utils.json_operation import get_parameter, get_required_parameter
+from src.utils.nep_to_gpumd import get_atomic_name_from_str
 from src.user.model_param import ModelParam
 from src.user.optimizer_param import OptimizerParam
 from src.user.work_file_param import WorkFileStructure
@@ -157,8 +157,8 @@ class InputParam(object):
         elif self.model_type == "Linear".upper():
             pass
         elif self.model_type == "NEP".upper():
-            self.set_nep_params(json_input) #  nep.in 输入的适配可能并不需要
-            self.file_paths.set_nep_native_file_paths()#  nep.in 输入的适配可能并不需要
+            self.set_nep_params(json_input)
+            self.file_paths.set_nep_native_file_paths()
         elif self.model_type == "CHEBY".upper():
             self.model_param = ModelParam()
             self.model_param.set_nn_fitting_net(get_parameter("fitting_net",model_dict, {}))
@@ -181,15 +181,20 @@ class InputParam(object):
     def set_default_multi_gpu_info(self, json_input:dict):
         # multi GPU train params  these params not used
         # "number of data loading workers (default: 4)
-        self.workers = get_parameter("workers", json_input, 0)
+        self.workers = get_parameter("workers", json_input, 1)
         # dist training by horovod, when multi GPU train, need True,
-        self.hvd = get_parameter("hvd", json_input, False)
-        self.world_size = get_parameter("world_size", json_input, -1)
-        self.rank = get_parameter("rank", json_input, -1)
-        self.dist_url = get_parameter("dist_url", json_input, "tcp://localhost:23456")  
+        self.hvd = get_parameter("hvd", json_input, False) # 本身不支持hvd，所以不需要设置
         self.dist_backend = get_parameter("dist_backend", json_input, "nccl")
+        # self.dist_socket_ifname = get_parameter("dist_backend_ifname", json_input, "eth0")
         self.distributed = get_parameter("distributed", json_input, False)
-        self.gpu = get_parameter("gpu", json_input, None)
+        self.master_addr = get_parameter("master_addr", json_input, None)
+        self.master_port = get_parameter("master_port", json_input, None)
+        self.multi_nodes = False
+        self.multi_gpus = False
+        self.local_rank = 0
+        self.rank = 0
+        self.world_size = 0
+        self.reduce_loss = get_parameter("reduce_loss", json_input, False)
 
     '''
     description: 

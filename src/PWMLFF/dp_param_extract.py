@@ -4,7 +4,7 @@ from src.user.input_param import InputParam
 import torch
 import numpy as np
 import src.aux.extract_ff as extract_ff
-from utils.atom_type_emb_dict import get_normalized_data_list
+from src.utils.atom_type_emb_dict import get_normalized_data_list
 
 def extract_force_field(dp_params:InputParam):
     config = dp_params.get_dp_net_dict()

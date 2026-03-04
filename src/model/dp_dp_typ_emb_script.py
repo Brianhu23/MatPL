@@ -9,7 +9,7 @@ sys.path.append(os.getcwd())
 
 from src.model.dp_embedding_typ_emb import EmbeddingNet, FittingNet
 # from src.model.calculate_force import CalculateCompress, CalculateForce, CalculateVirialForce
-from utils.atom_type_emb_dict import get_normalized_data_list
+from src.utils.atom_type_emb_dict import get_normalized_data_list
 
 class TypeDP(nn.Module):
     def __init__(self, config, davg, dstd, energy_shift, magic=False):

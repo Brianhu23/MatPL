@@ -6,7 +6,7 @@ import numpy as np
 import torch.distributed as dist
 import math
 import random
-from utils.debug_operation import check_cuda_memory
+from src.utils.debug_operation import check_cuda_memory
 class KFOptimizerWrapper:
     def __init__(
         self,

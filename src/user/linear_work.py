@@ -2,7 +2,7 @@ import os
 import json
 from src.user.input_param import InputParam
 from src.PWMLFF.linear_regressor import linear_regressor
-from utils.file_operation import delete_tree, copy_tree, copy_file
+from src.utils.file_operation import delete_tree, copy_tree, copy_file
 from src.pre_data.find_maxneighbor import get_max_neighbor
 
 '''

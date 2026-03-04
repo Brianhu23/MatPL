@@ -40,8 +40,8 @@ from src.pre_data.dpuni_data_loader import UniDataset, type_map, variable_length
 from src.PWMLFF.dp_mods.dp_trainer import train_KF, train, valid, save_checkpoint, predict
 from src.PWMLFF.dp_param_extract import load_davg_dstd_from_checkpoint, load_davg_dstd_from_feature_path
 from src.user.input_param import InputParam
-from utils.learning_rate import is_epoch_before_restart
-from utils.file_operation import write_arrays_to_file, copy_movements_to_work_dir, smlink_file
+from src.utils.learning_rate import is_epoch_before_restart
+from src.utils.file_operation import write_arrays_to_file, copy_movements_to_work_dir, smlink_file
 #from data_loader_2type_dp import MovementDataset, get_torch_data
 from src.aux.inference_plot import inference_plot
 
@@ -55,16 +55,8 @@ class dp_network:
             random.seed(self.dp_params.seed)
             torch.manual_seed(self.dp_params.seed)
 
-        # if self.dp_params.hvd:
-        #     hvd.init()
-        #     self.dp_params.gpu = hvd.local_rank()
-
         if torch.cuda.is_available():
-            if self.dp_params.gpu:
-                print("Use GPU: {} for training".format(self.dp_params.gpu))
-                self.device = torch.device("cuda:{}".format(self.dp_params.gpu))
-            else:
-                self.device = torch.device("cuda")
+            self.device = torch.device("cuda")
         #elif torch.backends.mps.is_available():
         #    self.device = torch.device("mps")
         else:
@@ -211,11 +203,9 @@ class dp_network:
             print("=> loading checkpoint '{}'".format(model_path))
             if not torch.cuda.is_available():
                 checkpoint = torch.load(model_path,map_location=torch.device('cpu') , weights_only=False)
-            elif self.dp_params.gpu is None:
-                checkpoint = torch.load(model_path, weights_only=False)
             elif torch.cuda.is_available():
                 # Map model to be loaded to specified single gpu.
-                loc = "cuda:{}".format(self.dp_params.gpu)
+                loc = "cuda:{}".format(0)
                 checkpoint = torch.load(model_path, map_location=loc, weights_only=False)
             # start afresh
             if self.dp_params.optimizer_param.reset_epoch:
@@ -234,17 +224,6 @@ class dp_network:
 
         if not torch.cuda.is_available():
             print("using CPU")
-            '''
-        elif self.dp_params.hvd:
-            if torch.cuda.is_available():
-                if self.dp_params.gpu is not None:
-                    torch.cuda.set_device(self.dp_params.gpu)
-                    model.cuda(self.dp_params.gpu)
-                    self.dp_params.optimizer_param.batch_size = int(self.dp_params.optimizer_param.batch_size / hvd.size())
-            '''
-        elif self.dp_params.gpu is not None and torch.cuda.is_available():
-            torch.cuda.set_device(self.dp_params.gpu)
-            model = model.cuda(self.dp_params.gpu)
         else:
             model = model.cuda()
             if model.compress_tab is not None:
@@ -346,11 +325,9 @@ class dp_network:
                 print("=> loading checkpoint '{}'".format(model_path))
                 if not torch.cuda.is_available():
                     checkpoint = torch.load(model_path,map_location=torch.device('cpu') , weights_only=False)
-                elif self.dp_params.gpu is None:
-                    checkpoint = torch.load(model_path, weights_only=False)
                 elif torch.cuda.is_available():
                     # Map model to be loaded to specified single gpu.
-                    loc = "cuda:{}".format(self.dp_params.gpu)
+                    loc = "cuda:{}".format(0)
                     checkpoint = torch.load(model_path, map_location=loc, weights_only=False)
                 # start afresh
                 if self.dp_params.optimizer_param.reset_epoch:
@@ -366,10 +343,6 @@ class dp_network:
                     model.set_comp_tab(checkpoint["compress"])
             else:
                 print("=> no checkpoint found at '{}'".format(model_path))
-
-        elif self.dp_params.gpu is not None and torch.cuda.is_available():
-            torch.cuda.set_device(self.dp_params.gpu)
-            model = model.cuda(self.dp_params.gpu)
         else:
             model = model.cuda()
             if model.compress_tab is not None:

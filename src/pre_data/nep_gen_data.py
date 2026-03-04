@@ -1,4 +1,4 @@
-from utils.random_utils import random_index
+from src.utils.random_utils import random_index
 import os
 
 from pwdata.movement import MOVEMENT

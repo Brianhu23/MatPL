@@ -6,7 +6,7 @@ from enum import Enum
 import torch
 from torch.utils.data import Subset
 from torch.autograd import Variable
-from src.loss.dploss import dp_loss, adjust_lr
+from src.loss.dploss import calc_loss, adjust_lr
 from src.optimizer.KFWrapper import KFOptimizerWrapper
 # import horovod.torch as hvd
 from torch.profiler import profile, record_function, ProfilerActivity
@@ -190,7 +190,7 @@ def train(train_loader, model, criterion, optimizer, epoch, start_lr, device, ar
                 loss_val += loss_Egroup_val
 
             if args.optimizer_param.train_egroup is True and args.optimizer_param.train_virial is True:
-                loss, _, _ = dp_loss(
+                loss, _, _ = calc_loss(
                     args,
                     0.001,
                     real_lr,
@@ -208,7 +208,7 @@ def train(train_loader, model, criterion, optimizer, epoch, start_lr, device, ar
                     natoms_img[0].item(),
                 )
             elif args.optimizer_param.train_egroup is True and args.optimizer_param.train_virial is False:
-                loss, _, _ = dp_loss(
+                loss, _, _ = calc_loss(
                     args,
                     0.001,
                     real_lr,
@@ -224,7 +224,7 @@ def train(train_loader, model, criterion, optimizer, epoch, start_lr, device, ar
                     natoms_img[0].item(),
                 )
             elif args.optimizer_param.train_egroup is False and args.optimizer_param.train_virial is True:
-                loss, _, _ = dp_loss(
+                loss, _, _ = calc_loss(
                     args,
                     0.001,
                     real_lr,
@@ -240,7 +240,7 @@ def train(train_loader, model, criterion, optimizer, epoch, start_lr, device, ar
                     natoms_img[0].item(),
                 )
             else:
-                loss, _, _ = dp_loss(
+                loss, _, _ = calc_loss(
                     args,
                     0.001,
                     real_lr,

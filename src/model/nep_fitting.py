@@ -31,13 +31,11 @@ class LayerModule(nn.Module):
     def __init__(self, 
                  weight: torch.Tensor, 
                  bias: torch.Tensor = None, 
-                 resnet_dt: torch.Tensor = None,
-                 fixed:bool = False):
+                 resnet_dt: torch.Tensor = None):
         super(LayerModule, self).__init__()
-        requires_grad = fixed is False
-        self.weight = nn.Parameter(weight, requires_grad=requires_grad)
-        self.bias = nn.Parameter(bias, requires_grad=requires_grad) if bias is not None else None
-        self.resnet_dt = nn.Parameter(resnet_dt, requires_grad=requires_grad) if resnet_dt is not None else None
+        self.weight = nn.Parameter(weight, requires_grad=True)
+        self.bias = nn.Parameter(bias, requires_grad=True) if bias is not None else None
+        self.resnet_dt = nn.Parameter(resnet_dt, requires_grad=True) if resnet_dt is not None else None
 
 class FittingNet(nn.Module):
 
@@ -50,10 +48,7 @@ class FittingNet(nn.Module):
                  ener_shift: float, 
                  magic = False,
                  nep_txt_param: List[np.array]=None,
-                 last_bias:bool=True,
-                 fix_hiddenlayer:bool=False,
-                 fix_outlayer:bool=False
-                 ):
+                 last_bias:bool=True):
         super(FittingNet, self).__init__()
         self.network_size = [input_dim] + network_size
         self.bias_flag = bias
@@ -83,12 +78,12 @@ class FittingNet(nn.Module):
                 resnet_dt = torch.Tensor(1, self.network_size[i])
                 normal(resnet_dt, mean=0.1, std=0.001)
 
-            self.layers.append(LayerModule(wij, bias, resnet_dt, fix_hiddenlayer))
+            self.layers.append(LayerModule(wij, bias, resnet_dt))
         
         i = len(self.network_size) - 1
         if from_nep_txt:
             wij = torch.from_numpy(nep_txt_param[2])
-            bias_init = nep_txt_param[3] * torch.ones(1)
+            bias_init = nep_txt_param[3] * torch.ones(1, self.network_size[i]) # torch.ones(1)
         else:
             wij = torch.randn(self.network_size[i-1], self.network_size[i])
             normal(wij, mean=0, std=(1.0 / np.sqrt(self.network_size[i-1] + self.network_size[i])))
@@ -98,9 +93,9 @@ class FittingNet(nn.Module):
                 normal(bias_init, mean=ener_shift, std=1.0)
         
         if self.last_bias:
-            self.layers.append(LayerModule(wij, bias_init, None, fix_outlayer))
+            self.layers.append(LayerModule(wij, bias_init, None))
         else:
-            self.layers.append(LayerModule(wij, None, None, fix_outlayer))
+            self.layers.append(LayerModule(wij, None, None))
     
     '''
     description: 

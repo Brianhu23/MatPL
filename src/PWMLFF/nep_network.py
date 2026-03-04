@@ -1,78 +1,67 @@
-import os,sys
+import os
+import sys
 import pathlib
-
-codepath = str(pathlib.Path(__file__).parent.resolve())
-sys.path.append(codepath)
-
-#for model.mlff 
-sys.path.append(codepath+'/../model')
-
-sys.path.append(codepath+'/../pre_data')
-
-#for optimizer
-sys.path.append(codepath+'/..')
-sys.path.append(codepath+'/../aux')
-sys.path.append(codepath+'/../lib')
-sys.path.append(codepath+'/../..')
-
 import random
 import torch
 import time
 import torch.nn as nn
-# import horovod.torch as hvd
+import torch.distributed as dist
 import torch.nn.parallel
 import torch.optim as optim
 import torch.utils.data
 import torch.utils.data.distributed
-
 from src.feature.nep_find_neigh.findneigh import FindNeigh
 import numpy as np
 import pandas as pd
-
 from src.model.nep_net import NEP
-# from src.model.dp_dp_typ_emb_Gk5 import TypeDP as Gk5TypeDP # this is Gk5 type embedding of dp
-from src.optimizer.GKF import GKFOptimizer
-from src.optimizer.LKF import LKFOptimizer
-
 from src.pre_data.nep_data_loader import calculate_neighbor_num_max_min, calculate_neighbor_scaler, UniDataset, variable_length_collate_fn, variable_length_collate_fn_nolimit, calculate_batch, type_map, NepTestData
 from src.PWMLFF.nep_mods.nep_trainer import train_KF, train, valid, save_checkpoint, predict
-from src.PWMLFF.dp_param_extract import load_atomtype_energyshift_from_checkpoint
 from src.user.input_param import InputParam
-from utils.file_operation import write_arrays_to_file, write_force_ei
-from utils.nep_to_gpumd import extract_model
-from utils.learning_rate import is_epoch_before_restart
+from src.utils.file_operation import write_arrays_to_file, write_force_ei
+from src.utils.nep_to_gpumd import extract_model
 from src.aux.inference_plot import inference_plot
 import concurrent.futures
 import multiprocessing
-from queue import Queue
-from utils.debug_operation import check_cuda_memory, check_cpu_memory
+from src.utils.debug_operation import check_cuda_memory, check_cpu_memory
+from src.utils.learning_rate import is_epoch_before_restart
+from src.optimizer.GKF import GKFOptimizer
+from src.optimizer.LKF import LKFOptimizer
+
+# 动态添加路径
+codepath = str(pathlib.Path(__file__).parent.resolve())
+sys.path.append(codepath)
+sys.path.append(codepath + '/../model')
+sys.path.append(codepath + '/..')
+sys.path.append(codepath + '/../aux')
+sys.path.append(codepath + '/../..')
+
 class nep_network:
     def __init__(self, nep_param:InputParam):
         self.input_param = nep_param
-        # self.config = self.nep_params.get_dp_net_dict()
-        self.davg_dstd_energy_shift = None # davg/dstd/energy_shift from training data
         torch.set_printoptions(precision = 12)
+
         if self.input_param.seed is not None:
             random.seed(self.input_param.seed)
             torch.manual_seed(self.input_param.seed)
 
-        # if self.dp_params.hvd:
-        #     hvd.init()
-        #     self.dp_params.gpu = hvd.local_rank()
-
-        if torch.cuda.is_available():
-            if self.input_param.gpu:
-                print("Use GPU: {} for training".format(self.input_param.gpu))
-                self.device = torch.device("cuda:{}".format(self.input_param.gpu))
-            else:
-                self.device = torch.device("cuda")
-        #elif torch.backends.mps.is_available():
-        #    self.device = torch.device("mps")
-        else:
-            self.device = torch.device("cpu")
+        self.is_rank_0 = True if self.input_param.rank == 0 else False
+        # 初始化 DDP 环境
+        if self.input_param.multi_gpus:
+            dist.init_process_group(
+                backend="nccl",
+                init_method=f"tcp://{self.input_param.master_addr}:{self.input_param.master_port}",
+                rank=self.input_param.rank,
+                world_size=self.input_param.world_size
+            )
+            torch.cuda.set_device(self.input_param.local_rank)
+            self.device = torch.device(f"cuda:{self.input_param.local_rank}")
+            print(f'Rank {self.input_param.rank}: LocalRank: {self.input_param.local_rank}, device {self.device} for training, Master IP: {self.input_param.master_addr} Free Port {self.input_param.master_port}')
+        else: # single gpu
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            print(f"Using device: {self.device}")
 
         if self.input_param.precision == "float32":
-            self.training_type = torch.float32  # training type is weights type
+            self.training_type = torch.float32
         else:
             self.training_type = torch.float64
 
@@ -115,40 +104,56 @@ class nep_network:
                                             )
 
             energy_shift = train_dataset.get_energy_shift()
-
-            # should add a collate function for padding
+            # 使用 DistributedSampler
+            train_sampler = torch.utils.data.distributed.DistributedSampler(
+                train_dataset,
+                num_replicas=self.input_param.world_size,
+                rank=self.input_param.rank,
+                shuffle=self.input_param.data_shuffle
+            )
             train_loader = torch.utils.data.DataLoader(
                 train_dataset,
                 batch_size=self.input_param.optimizer_param.batch_size,
-                shuffle=self.input_param.data_shuffle,
-                collate_fn= variable_length_collate_fn, 
-                num_workers=self.input_param.workers,   
+                shuffle=False,  # DistributedSampler 控制 shuffle
+                sampler=train_sampler,
+                collate_fn=variable_length_collate_fn, 
+                num_workers=self.input_param.workers,
                 drop_last=True,
                 pin_memory=True,
+                prefetch_factor=2,
+                persistent_workers=True
             )
             max_batch = calculate_batch(train_dataset.max_atom_nums, 400) # 按照最大默认400个近邻取batchsize
             forscaler_loader = torch.utils.data.DataLoader(
                 train_dataset,
                 batch_size=max_batch,
-                shuffle=self.input_param.data_shuffle,
-                collate_fn= variable_length_collate_fn_nolimit, 
-                num_workers=self.input_param.workers,   
+                shuffle=False,  # DistributedSampler 控制 shuffle
+                sampler=train_sampler,
+                collate_fn=variable_length_collate_fn_nolimit, 
+                num_workers=self.input_param.workers,
                 drop_last=False,
                 pin_memory=True,
+                prefetch_factor=2,
+                persistent_workers=True
             )
-            
-            if self.input_param.inference:
-                val_loader = None
-            else:
-                val_loader = torch.utils.data.DataLoader(
-                    valid_dataset,
-                    batch_size=self.input_param.optimizer_param.batch_size,
-                    shuffle=False,
-                    collate_fn= variable_length_collate_fn, 
-                    num_workers=self.input_param.workers,
-                    pin_memory=True,
-                    drop_last=True
-                )
+            valid_sampler = torch.utils.data.distributed.DistributedSampler(
+                valid_dataset,
+                num_replicas=self.input_param.world_size,
+                rank=self.input_param.rank,
+                shuffle=False
+            )
+            val_loader = torch.utils.data.DataLoader(
+                valid_dataset,
+                batch_size=self.input_param.optimizer_param.batch_size,
+                shuffle=False,
+                sampler=valid_sampler,
+                collate_fn=variable_length_collate_fn,
+                num_workers=self.input_param.workers,
+                pin_memory=True,
+                drop_last=True,
+                prefetch_factor=2,
+                persistent_workers=True
+            )
             return energy_shift, train_loader, val_loader, forscaler_loader
     
     '''
@@ -157,110 +162,123 @@ class nep_network:
     return {*} 
     author: wuxingxing
     '''
-    # def get_stat(self):
-    #     if self.davg_dstd_energy_shift is None:
-    #         if os.path.exists(self.input_param.file_paths.model_load_path) is False:
-    #             raise Exception("ERROR! {} is not exist when get energy shift !".format(self.input_param.file_paths.model_load_path))
-    #         davg_dstd_energy_shift = load_atomtype_energyshift_from_checkpoint(self.input_param.file_paths.model_load_path)
-    #     else:
-    #         davg_dstd_energy_shift = self.davg_dstd_energy_shift
-    #     return davg_dstd_energy_shift
-    
-    def load_model_optimizer(self, energy_shift, avg_atom_num=1, iterations=1):
+    def load_model_optimizer(self, energy_shift, avg_atom_num=1, iterations=1, q_scaler = None, max_NN_radial = -1, max_NN_angular = -1):
         def _adjust_ckpt_keys(ckpt, new_ckpt):
             keys = list(ckpt['state_dict'].keys())
             new_dict = {}
-            q_scaler = None
-            module = "" if "q_scaler" in ckpt['state_dict'].keys() else "module."
-            if f'{module}q_scaler' in ckpt['state_dict'].keys(): # ckpt from MatPL-PRO single gpu training
+            
+            if 'q_scaler' in ckpt.keys(): # ckpt from single GPU training
+                if self.is_rank_0:
+                    print("The checkpoint file from single gpu training!")
                 for key in keys:
-                    if key in [f"{module}C3B", f"{module}C4B", f"{module}C5B", f"{module}atom_type_device", f"{module}max_NN_radial", f"{module}max_NN_angular"]:
-                        continue
-                    if key == f"{module}q_scaler":
-                        if type(ckpt['state_dict'][f'{module}q_scaler']) == torch.Tensor:
-                            q_scaler = np.array(ckpt['state_dict'][key].cpu().detach().tolist())
-                        else:
-                            q_scaler = ckpt['state_dict'][key]
-                    else:
-                        new_dict[f'{key.replace("module.", "")}'] = ckpt['state_dict'][key]
+                    if self.input_param.world_size > 1: # current is multi gpus
+                        new_dict[f'{module}{key}'] = ckpt['state_dict'][key]
+                if self.input_param.world_size == 1: # current is single gpus
+                    new_dict = ckpt['state_dict']
                 
+                new_dict[f'{module}q_scaler'] = torch.tensor(list(ckpt['q_scaler']),  # set q_scaler
+                                                    dtype=new_ckpt.state_dict()[f'{module}c_param_2'].dtype, 
+                                                    device=new_ckpt.state_dict()[f'{module}c_param_2'].device)
+                for key in ["C3B", "C4B", "C5B", "atom_type_device", "max_NN_radial", "max_NN_angular"]:
+                    new_dict[f'{module}{key}'] = new_ckpt.state_dict()[f'{module}{key}'] # these parameters are fixed values
+                    
+            else: # ckpt from multi-train version
+                if ("module." in keys[0] and self.input_param.world_size > 1) or ("module." not in keys[0] and self.input_param.world_size == 1): # ckpt from multi-gpu
+                    new_dict = ckpt['state_dict']
+                else:
+                    for key in keys:
+                        if "module." in keys[0] and self.input_param.world_size == 1: # ckpt from multi-gpu and current work use single cpu remove the module key
+                            new_dict[key.replace("module.", "")] = ckpt['state_dict'][key]
+                        else: # ckpt from single train but current is multi training
+                            new_dict[f'module.{key}'] = ckpt['state_dict'][key]
             ckpt['state_dict'] = new_dict
-            ckpt["q_scaler"] = q_scaler
             return ckpt
 
-        # create model 
-        # when running evaluation, nothing needs to be done with davg.npy
-        # if does not use CosineAnnealingWarmRestarts, avg_atom_num = 1
-        model = NEP(self.input_param, energy_shift)
-        model = model.to(self.training_type)
-
-        # optionally resume from a checkpoint
+        model = NEP(self.input_param, 
+                        energy_shift,
+                        q_scaler = q_scaler, 
+                        max_NN_radial = max_NN_radial, 
+                        max_NN_angular = max_NN_angular,
+                        dtype = self.training_type, 
+                        device = self.device
+                        ).to(self.training_type).to(self.device)
+        # 包装模型为 DDP
+        if torch.cuda.is_available() and self.input_param.world_size > 1:
+            model = nn.parallel.DistributedDataParallel(model, 
+                                            device_ids=[self.input_param.local_rank], 
+                                            output_device=self.input_param.local_rank,
+                                            find_unused_parameters=True)
         checkpoint = None
-
-        if self.input_param.inference: # recover from user input ckpt file for inference work
+        model_path = None
+        # 不用考虑 inference，直接走的nepcpu or nepgpu
+        if self.input_param.recover_train and self.input_param.file_paths.model_load_path and \
+           os.path.exists(self.input_param.file_paths.model_load_path):
             model_path = self.input_param.file_paths.model_load_path
-        else: # for training 
-            model_path = None 
-            if self.input_param.recover_train:
-                if self.input_param.file_paths.model_load_path is not None and \
-                    os.path.exists(self.input_param.file_paths.model_load_path): # Prioritize loading models from model_load_path
+        elif self.input_param.inference:
+            model_path = self.input_param.file_paths.model_load_path
+        else:
+            if self.input_param.nep_param.model_wb is None:
+                if self.input_param.file_paths.model_load_path and \
+                   os.path.exists(self.input_param.file_paths.model_load_path):
                     model_path = self.input_param.file_paths.model_load_path
-                elif os.path.exists(self.input_param.file_paths.model_save_path):   
-                    model_path = self.input_param.file_paths.model_save_path  # recover from last training
-            
-            if model_path is not None and \
-                    self.input_param.nep_param.model_wb is not None and len(self.input_param.nep_param.model_wb) > 0:
-                raise Exception(f"ERROR! Multiple source model paths detected, please check the {model_path} directory, parameter 'model_load_file or 'nep_txt_file'!")
-
-        if model_path is not None and os.path.isfile(model_path):
-            print("=> loading checkpoint '{}'".format(model_path))
-            if not torch.cuda.is_available():
-                checkpoint = torch.load(model_path,map_location=torch.device('cpu'), weights_only=False)
-            elif self.input_param.gpu is None:
-                checkpoint = torch.load(model_path, weights_only=False)
-            elif torch.cuda.is_available():
-                # Map model to be loaded to specified single gpu.
-                loc = "cuda:{}".format(self.input_param.gpu)
-                checkpoint = torch.load(model_path, map_location=loc, weights_only=False)
-            # start afresh
-            if self.input_param.optimizer_param.reset_epoch:
-                if checkpoint["epoch"] != 1:
-                    print("The loaded model has been trained for {} epochs. Reset the starting epoch to 1. To disable it, please set 'reset_epoch' in the JSON file to false".format(checkpoint["epoch"]))
-                self.input_param.optimizer_param.start_epoch = 1
+                else:
+                    model_path = self.input_param.file_paths.model_save_path
             else:
-                self.input_param.optimizer_param.start_epoch = checkpoint["epoch"] + 1
+                model_path = None
+
+        module = 'module.' if self.input_param.world_size > 1 else ''
+        if model_path and os.path.isfile(model_path):
+            checkpoint = torch.load(model_path, map_location=self.device, weights_only=False)
             checkpoint = _adjust_ckpt_keys(checkpoint, model) # 适配旧版本以及单卡多卡版本
             model.load_state_dict(checkpoint["state_dict"])
-            
-            if "max_neighbor" in checkpoint.keys():
-                model.max_NN_radial, model.max_NN_angular = checkpoint["max_neighbor"]
-            # scheduler.load_state_dict(checkpoint["scheduler"])
-            print("=> loaded checkpoint '{}' (epoch {})"\
-                    .format(model_path, checkpoint["epoch"]))
-            if "compress" in checkpoint.keys():
-                model.set_comp_tab(checkpoint["compress"])
-        else:
-            print("=> no checkpoint file found at '{}'".format(model_path))
+            if "epoch" in checkpoint:
+                if self.input_param.optimizer_param.reset_epoch:
+                    if checkpoint["epoch"] != 1:
+                        print(f"Rank {self.input_param.rank}: Resetting epoch to 1 from {checkpoint['epoch']}")
+                    self.input_param.optimizer_param.start_epoch = 1
+                else:
+                    self.input_param.optimizer_param.start_epoch = checkpoint["epoch"] + 1
+            if self.input_param.world_size > 1:
+                print(f"Reload ckpt: Rank {self.input_param.rank}, LocalRank {self.input_param.local_rank}, start_epoch: {self.input_param.optimizer_param.start_epoch}")
+                dist.barrier()
 
-        if not torch.cuda.is_available():
-            print("using CPU")
-            '''
-        elif self.input_param.hvd:
-            if torch.cuda.is_available():
-                if self.input_param.gpu is not None:
-                    torch.cuda.set_device(self.input_param.gpu)
-                    model.cuda(self.input_param.gpu)
-                    self.input_param.optimizer_param.batch_size = int(self.input_param.optimizer_param.batch_size / hvd.size())
-            '''
-        elif self.input_param.gpu is not None and torch.cuda.is_available():
-            torch.cuda.set_device(self.input_param.gpu)
-            model = model.cuda(self.input_param.gpu)
-        else:
-            model = model.cuda()
-            # if model.compress_tab is not None:
-            #     model.compress_tab.to(device=self.device)
         # optimizer, and learning rate scheduler
-        if self.input_param.optimizer_param.opt_name == "LKF":
+        scheduler = None
+        if self.input_param.optimizer_param.opt_name in ["ADAM", "ADAMW", "SGD"]:
+            if self.input_param.optimizer_param.warmup is not None:# 如果采用预热，则前n个epoch 学习率线性增加,一般前5% epochs，从最小增加
+                init_lr = self.input_param.optimizer_param.stop_lr 
+            else:
+                init_lr = self.input_param.optimizer_param.learning_rate
+
+            if self.input_param.optimizer_param.opt_name == "ADAM":
+                optimizer = optim.Adam(
+                    model.parameters(),
+                    lr=init_lr,
+                    weight_decay=self.input_param.optimizer_param.lambda_2 or 0
+                )
+            elif self.input_param.optimizer_param.opt_name == "ADAMW":
+                optimizer = optim.AdamW(
+                    model.parameters(),
+                    lr=init_lr,
+                    weight_decay=self.input_param.optimizer_param.lambda_2 or 0
+                )
+            elif self.input_param.optimizer_param.opt_name == "SGD":
+                optimizer = optim.SGD(
+                    model.parameters(),
+                    lr=init_lr,
+                    momentum=self.input_param.optimizer_param.momentum,
+                    weight_decay=self.input_param.optimizer_param.weight_decay
+                )
+            # 初始化学习率调度器
+            if self.input_param.optimizer_param.t_0 and self.input_param.optimizer_param.opt_name not in ["LKF", "GKF"]:
+                scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+                optimizer,
+                T_0=self.input_param.optimizer_param.t_0 * iterations,
+                T_mult=self.input_param.optimizer_param.t_mult,
+                eta_min=self.input_param.optimizer_param.stop_lr,
+                last_epoch=-1
+            )
+        elif self.input_param.optimizer_param.opt_name == "LKF":
             optimizer = LKFOptimizer(
                 model.parameters(),
                 self.input_param.optimizer_param.kalman_lambda,
@@ -274,111 +292,120 @@ class nep_network:
                 self.input_param.optimizer_param.kalman_lambda,
                 self.input_param.optimizer_param.kalman_nue
             )
-        elif self.input_param.optimizer_param.opt_name == "ADAM":
-            if self.input_param.optimizer_param.lambda_2 is None:
-                optimizer = optim.Adam(model.parameters(), 
-                                    lr=self.input_param.optimizer_param.learning_rate * avg_atom_num**0.5)
-            else:
-                optimizer = optim.Adam(model.parameters(), 
-                                    lr=self.input_param.optimizer_param.learning_rate * avg_atom_num**0.5, 
-                                        weight_decay=self.input_param.optimizer_param.lambda_2)
-            
+        else:
+            raise Exception("Error: Unsupported optimizer!")
+
+        return model, optimizer, scheduler
+
+
+    def reset_lr(self, model, iterations, optimizer, scheduler):
+        # 初始化优化器
+        init_lr = self.input_param.optimizer_param.learning_rate
+        if self.input_param.optimizer_param.opt_name == "ADAM":
+            optimizer = optim.Adam(
+                model.parameters(),
+                lr=init_lr,
+                weight_decay=self.input_param.optimizer_param.lambda_2 or 0
+            )
         elif self.input_param.optimizer_param.opt_name == "ADAMW":
-            if self.input_param.optimizer_param.lambda_2 is None:
-                optimizer = optim.AdamW(model.parameters(), 
-                                    lr=self.input_param.optimizer_param.learning_rate * avg_atom_num**0.5)
-            else:
-                optimizer = optim.AdamW(model.parameters(), 
-                                    lr=self.input_param.optimizer_param.learning_rate * avg_atom_num**0.5, 
-                                        weight_decay=self.input_param.optimizer_param.lambda_2)
-        
+            optimizer = optim.AdamW(
+                model.parameters(),
+                lr=init_lr,
+                weight_decay=self.input_param.optimizer_param.lambda_2 or 0
+            )
         elif self.input_param.optimizer_param.opt_name == "SGD":
             optimizer = optim.SGD(
-                model.parameters(), 
-                self.input_param.optimizer_param.learning_rate * avg_atom_num**0.5,
+                model.parameters(),
+                lr=init_lr,
                 momentum=self.input_param.optimizer_param.momentum,
                 weight_decay=self.input_param.optimizer_param.weight_decay
             )
         else:
             raise Exception("Error: Unsupported optimizer!")
-
-        if self.input_param.optimizer_param.t_0 is not None and \
-            self.input_param.optimizer_param.opt_name not in  ["LKF", "GKF"]: 
-            scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, 
-                                                                    T_0= self.input_param.optimizer_param.t_0*iterations, 
-                                                                    T_mult=self.input_param.optimizer_param.t_mult,
-                                                                    eta_min=self.input_param.optimizer_param.stop_lr,
-                                                                    last_epoch=-1,
-                                                                    verbose=self.input_param.optimizer_param.verbose)
-
-        else:
-            scheduler = None
-        q_scaler = None
-        if checkpoint is not None and "q_scaler" in checkpoint.keys(): # from model ckpt file
-            q_scaler = checkpoint["q_scaler"]
-        elif self.input_param.nep_param.q_scaler is not None:
-            q_scaler = self.input_param.nep_param.q_scaler
-        if self.input_param.optimizer_param.opt_name in ["LKF", "GKF", "ADAM", "ADAMW", "SGD"]:
-            if checkpoint is not None and "optimizer" in checkpoint.keys():
-                optimizer.load_state_dict(checkpoint["optimizer"])
-            if checkpoint is not None and self.input_param.optimizer_param.opt_name in ["LKF"] and "optimizer" in checkpoint.keys() and 'P' in checkpoint["optimizer"]['state'][0].keys():
-                load_p = checkpoint["optimizer"]['state'][0]['P']
-                optimizer.set_kalman_P(load_p, checkpoint["optimizer"]['state'][0]['kalman_lambda'])
-        
-        model.set_nep_param_device(q_scaler)
-        '''
-        if self.input_param.hvd:
-            # after hvd.DistributedOptimizer, the matrix P willed be reset to Identity matrix
-            # its because hvd.DistributedOptimizer will initialize a new object of Optimizer Class
-            optimizer = hvd.DistributedOptimizer(
-                optimizer, named_parameters=model.named_parameters()
+        # 初始化学习率调度器
+        scheduler = None
+        if self.input_param.optimizer_param.t_0 and self.input_param.optimizer_param.opt_name not in ["LKF", "GKF"]:
+            scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+                optimizer,
+                T_0=self.input_param.optimizer_param.t_0 * iterations,
+                T_mult=self.input_param.optimizer_param.t_mult,
+                eta_min=self.input_param.optimizer_param.stop_lr,
+                last_epoch=-1
             )
-            # Broadcast parameters from rank 0 to all other processes.
-            hvd.broadcast_parameters(model.state_dict(), root_rank=0)
-        """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
-        # scheduler = StepLR(optimizer, step_size=30, gamma=0.1)
-        '''
-        # self.device = optimizer._state["P"][0].device
-        # set params device
-        return model, optimizer, scheduler
+        return optimizer, scheduler
 
     def train(self):
         energy_shift, train_loader, val_loader, forscaler_loader = self.load_data()
-        #energy_shift is same as energy_shift of upper; atom_map is the user input order
-        model, optimizer, scheduler = self.load_model_optimizer(energy_shift, avg_atom_num=1, iterations=len(train_loader)) #train_dataset.avg_image_atom
-        
+        if len(train_loader) < 1:
+            print(f"ERROR! The training set size {len(train_loader)} is too small, please adjust the number of GPU or batch_size: training_set_size >= batch_size * gpu_nums")
+        max_NN_radial, min_NN_radial, max_NN_angular, min_NN_angular, q_scaler = None, None, None, None, None
 
-        # max_NN_radial, min_NN_radial, max_NN_angular, min_NN_angular = \
-        #                 calculate_neighbor_num_max_min(dataset=train_dataset, device = self.device, num_workers=self.input_param.workers)
-        
-        if model.q_scaler is None:
-            q_scaler, max_NN_radial, min_NN_radial, max_NN_angular, min_NN_angular = calculate_neighbor_scaler(
-                            forscaler_loader,
-                            model.n_max_radial,
-                            model.n_base_radial,
-                            model.n_max_angular,
-                            model.n_base_angular,
-                            model.l_max_3b,
-                            model.l_max_4b,
-                            model.l_max_5b,
-                            self.device,
-                            num_workers=self.input_param.workers)
-
-            model.reset_scaler(q_scaler, self.training_type, self.device)
-        else:
-            max_NN_radial, min_NN_radial, max_NN_angular, min_NN_angular = 0, 1e10, 0, 1e10
+    
+        # print(f"======= rank {self.input_param.rank} len forscaler_loader {len(forscaler_loader)} ======")
+        local_global_max, local_global_min, local_max_NN_radial, local_min_NN_radial, local_max_NN_angular, local_min_NN_angular = calculate_neighbor_scaler(
+                    forscaler_loader,
+                    self.input_param.nep_param.n_max[0],      # model.n_max_radial,
+                    self.input_param.nep_param.basis_size[0], # model.n_base_radial,
+                    self.input_param.nep_param.n_max[1],      # model.n_max_angular,
+                    self.input_param.nep_param.basis_size[1], # model.n_base_angular,
+                    self.input_param.nep_param.l_max[0],      # model.l_max_3b,
+                    self.input_param.nep_param.l_max[1],      # model.l_max_4b,
+                    self.input_param.nep_param.l_max[2],      # model.l_max_5b,
+                    self.device,
+                    num_workers=self.input_param.workers)
+        if self.input_param.world_size > 1:
+            # 汇总 global_max
+            local_global_max_tensor = local_global_max.clone().detach().to(self.device)
+            dist.all_reduce(local_global_max_tensor, op=dist.ReduceOp.MAX)
+            global_max = local_global_max_tensor
             
-        if self.input_param.nep_param.max_nn_from_txt:
-            model.max_NN_radial  = max(self.input_param.nep_param.max_NN_radial, max_NN_radial)
-            model.max_NN_angular = max(self.input_param.nep_param.max_NN_angular, max_NN_angular)
+            # 汇总 global_min
+            local_global_min_tensor = local_global_min.clone().detach().to(self.device)
+            dist.all_reduce(local_global_min_tensor, op=dist.ReduceOp.MIN)
+            global_min = local_global_min_tensor
+            
+            # 汇总 max_NN_radial
+            max_radial_tensor = torch.tensor([local_max_NN_radial], dtype=torch.int64, device=self.device)
+            dist.all_reduce(max_radial_tensor, op=dist.ReduceOp.MAX)
+            max_NN_radial = max_radial_tensor.item()
+            
+            # 汇总 max_NN_angular
+            max_angular_tensor = torch.tensor([local_max_NN_angular], dtype=torch.int64, device=self.device)
+            dist.all_reduce(max_angular_tensor, op=dist.ReduceOp.MAX)
+            max_NN_angular = max_angular_tensor.item()
         else:
-            model.max_NN_radial = max(model.max_NN_radial, max_NN_radial)
-            model.max_NN_angular = max(model.max_NN_angular, max_NN_angular)
+            # 单卡情况
+            global_max = local_global_max
+            global_min = local_global_min
+            max_NN_radial = local_max_NN_radial
+            max_NN_angular = local_max_NN_angular
+            # 计算最终的 q_scaler
+        if self.input_param.nep_param.q_scaler is None:
+            q_scaler = 1.0 / (global_max - global_min)
+            q_scaler = q_scaler.tolist()
+        else:
+            # 如果提供了预定义的 q_scaler
+            q_scaler = self.input_param.nep_param.q_scaler
+            if self.input_param.nep_param.max_nn_from_txt:
+                max_NN_radial  = max(self.input_param.nep_param.max_NN_radial, max_NN_radial)
+                max_NN_angular = max(self.input_param.nep_param.max_NN_angular, max_NN_angular)
 
-        if not os.path.exists(self.input_param.file_paths.model_store_dir):
+        # print(f"INIT: Rank: {self.input_param.rank}, LocalRank: {self.input_param.local_rank},  Max neighbor numbers: radial={max_NN_radial}, angular={max_NN_angular}, scaler[-1]:{q_scaler[-1]} lendata {len(train_loader)}")
+        if self.input_param.world_size > 1:
+            dist.barrier()
+
+        model, optimizer, scheduler = self.load_model_optimizer(energy_shift, 
+                                                                avg_atom_num=1, 
+                                                                iterations=len(train_loader), 
+                                                                q_scaler = q_scaler, 
+                                                                max_NN_radial = max_NN_radial, 
+                                                                max_NN_angular = max_NN_angular)
+
+        if self.is_rank_0 and not os.path.exists(self.input_param.file_paths.model_store_dir):
             os.makedirs(self.input_param.file_paths.model_store_dir)
+        if self.input_param.world_size > 1:
+            dist.barrier()
 
-        # Define the lists based on the training type
         train_lists = ["epoch", "loss"]
         valid_lists = ["epoch", "loss"]
         
@@ -388,8 +415,6 @@ class nep_network:
             train_lists.append("Loss_l2")
 
         if self.input_param.optimizer_param.train_energy:
-            # train_lists.append("RMSE_Etot")
-            # valid_lists.append("RMSE_Etot")
             train_lists.append("RMSE_Etot(eV/atom)")
             valid_lists.append("RMSE_Etot(eV/atom)")
         if self.input_param.optimizer_param.train_ei:
@@ -429,146 +454,111 @@ class nep_network:
         valid_format = "".join(["%{}s".format(train_print_width[i]) for i in valid_lists])
         train_log = os.path.join(self.input_param.file_paths.model_store_dir, "epoch_train.dat")
         valid_log = os.path.join(self.input_param.file_paths.model_store_dir, "epoch_valid.dat")
-        write_mode = "a" if os.path.exists(train_log) else "w"
-        if write_mode == "w":
-            f_train_log = open(train_log, "w")
-            f_train_log.write("# %s\n" % (train_format % tuple(train_lists)))
-            if len(val_loader) > 0:
-                f_valid_log = open(valid_log, "w")
-                f_valid_log.write("# %s\n" % (valid_format % tuple(valid_lists)))
+        if self.is_rank_0:
+            write_mode = "a" if os.path.exists(train_log) else "w"
+            with open(train_log, write_mode) as f_train_log:
+                if write_mode == "w":
+                    f_train_log.write("# %s\n" % (train_format % tuple(train_lists)))
+            if val_loader and len(val_loader) > 0:
+                with open(valid_log, write_mode) as f_valid_log:
+                    if write_mode == "w":
+                        f_valid_log.write("# %s\n" % (valid_format % tuple(valid_lists)))
 
         for epoch in range(self.input_param.optimizer_param.start_epoch, self.input_param.optimizer_param.epochs + 1):
             time_start = time.time()
+            if self.input_param.optimizer_param.warmup is not None and self.input_param.optimizer_param.warmup + 1 == epoch: # epoch 从1计数
+                optimizer, scheduler = self.reset_lr(model, len(train_loader), optimizer, scheduler)
+            # 设置 sampler 的 epoch 以确保 shuffle 一致
+            if hasattr(train_loader, 'sampler') and isinstance(train_loader.sampler, torch.utils.data.distributed.DistributedSampler):
+                train_loader.sampler.set_epoch(epoch)
+
             if self.input_param.optimizer_param.opt_name == "LKF" or self.input_param.optimizer_param.opt_name == "GKF":
                 loss, loss_Etot, loss_Etot_per_atom, loss_Force, loss_Ei, loss_egroup, loss_virial, loss_virial_per_atom, loss_l1, loss_l2 = train_KF(
                     train_loader, model, self.criterion, optimizer, epoch, self.device, self.input_param
                 )
             else:
                 loss, loss_Etot, loss_Etot_per_atom, loss_Force, loss_Ei, loss_egroup, loss_virial, loss_virial_per_atom, real_lr, loss_l1, loss_l2 = train(
-                    train_loader, model, self.criterion, optimizer, scheduler, epoch, \
+                    train_loader, model, self.criterion, optimizer, scheduler, epoch,
                         self.input_param.optimizer_param.learning_rate, self.device, self.input_param
                 )
+
             time_end = time.time()
             # self.convert_to_gpumd(model)
 
             # evaluate on validation set
-            if len(val_loader) > 0:
+            if val_loader and len(val_loader) > 0:
                 vld_loss, vld_loss_Etot, vld_loss_Etot_per_atom, vld_loss_Force, vld_loss_Ei, val_loss_egroup, val_loss_virial, val_loss_virial_per_atom = valid(
-                        val_loader, model, self.criterion, self.device, self.input_param
-                    )
-
-            # if not self.dp_params.hvd or (self.dp_params.hvd and hvd.rank() == 0):
-
-            f_train_log = open(train_log, "a")
-
-            # Write the log line to the file based on the training mode
-            train_log_line = "%5d%20.10e" % (
-                epoch,
-                loss,
-            )
-            if len(val_loader) > 0: #valid log
-                f_valid_log = open(valid_log, "a")
-                valid_log_line = "%5d%20.10e" % (
-                    epoch,
-                    vld_loss,
+                    val_loader, model, self.criterion, self.device, self.input_param
                 )
-                if self.input_param.optimizer_param.train_energy:
-                    # valid_log_line += "%18.10e" % (vld_loss_Etot)
-                    valid_log_line += "%21.10e" % (vld_loss_Etot_per_atom)
-                if self.input_param.optimizer_param.train_ei:
-                    valid_log_line += "%18.10e" % (vld_loss_Ei)
-                if self.input_param.optimizer_param.train_egroup:
-                    valid_log_line += "%18.10e" % (val_loss_egroup)
-                if self.input_param.optimizer_param.train_force:
-                    valid_log_line += "%21.10e" % (vld_loss_Force)
-                if self.input_param.optimizer_param.train_virial:
-                    # valid_log_line += "%18.10e" % (val_loss_virial)
-                    valid_log_line += "%23.10e" % (val_loss_virial_per_atom)
-                f_valid_log.write("%s\n" % (valid_log_line))
-                f_valid_log.close()
 
-            # train log
-            if self.input_param.optimizer_param.lambda_1 is not None:
-                train_log_line += "%18.10e" % (loss_l1)
-            if self.input_param.optimizer_param.lambda_2 is not None:
-                train_log_line += "%18.10e" % (loss_l2)
-            if self.input_param.optimizer_param.train_energy:
-                # train_log_line += "%18.10e" % (loss_Etot)
-                train_log_line += "%21.10e" % (loss_Etot_per_atom)
-            if self.input_param.optimizer_param.train_ei:
-                train_log_line += "%18.10e" % (loss_Ei)
-            if self.input_param.optimizer_param.train_egroup:
-                train_log_line += "%18.10e" % (loss_egroup)
-            if self.input_param.optimizer_param.train_force:
-                train_log_line += "%21.10e" % (loss_Force)
-            if self.input_param.optimizer_param.train_virial:
-                # train_log_line += "%18.10e" % (loss_virial)
-                train_log_line += "%23.10e" % (loss_virial_per_atom)
-            if self.input_param.optimizer_param.opt_name == "LKF" or self.input_param.optimizer_param.opt_name == "GKF":
-                train_log_line += "%15.4f" % (time_end - time_start)
-            else:
-                train_log_line += "%18.10e%15.4f" % (real_lr , time_end - time_start)
+            if self.is_rank_0:
+                with open(train_log, "a") as f_train_log:
+                    train_log_line = f"{epoch:5d}{loss:20.10e}"
+                    if self.input_param.optimizer_param.lambda_1:
+                        train_log_line += f"{loss_l1:18.10e}"
+                    if self.input_param.optimizer_param.lambda_2:
+                        train_log_line += f"{loss_l2:18.10e}"
+                    if self.input_param.optimizer_param.train_energy:
+                        train_log_line += f"{loss_Etot_per_atom:21.10e}"
+                    if self.input_param.optimizer_param.train_ei:
+                        train_log_line += f"{loss_Ei:18.10e}"
+                    if self.input_param.optimizer_param.train_egroup:
+                        train_log_line += f"{loss_egroup:18.10e}"
+                    if self.input_param.optimizer_param.train_force:
+                        train_log_line += f"{loss_Force:21.10e}"
+                    if self.input_param.optimizer_param.train_virial:
+                        train_log_line += f"{loss_virial_per_atom:23.10e}"
+                    if self.input_param.optimizer_param.opt_name == "LKF" or self.input_param.optimizer_param.opt_name == "GKF":
+                        train_log_line += "%15.4f" % (time_end - time_start)
+                    else:
+                        train_log_line += f"{real_lr:18.10e}{(time_end - time_start):15.4f}"
+                    f_train_log.write(f"{train_log_line}\n")
 
-            f_train_log.write("%s\n" % (train_log_line))
-            f_train_log.close()
-            
-            # if not self.dp_params.hvd or (self.dp_params.hvd and hvd.rank() == 0):
-            if self.input_param.optimizer_param.opt_name in ["LKF", "GKF"] and \
-                self.input_param.file_paths.save_p_matrix:
-                save_checkpoint(
-                    {
-                    "json_file":self.input_param.to_dict(),
+                if val_loader and len(val_loader) > 0:
+                    with open(valid_log, "a") as f_valid_log:
+                        valid_log_line = f"{epoch:5d}{vld_loss:20.10e}"
+                        if self.input_param.optimizer_param.train_energy:
+                            valid_log_line += f"{vld_loss_Etot_per_atom:21.10e}"
+                        if self.input_param.optimizer_param.train_ei:
+                            valid_log_line += f"{vld_loss_Ei:18.10e}"
+                        if self.input_param.optimizer_param.train_egroup:
+                            valid_log_line += f"{val_loss_egroup:18.10e}"
+                        if self.input_param.optimizer_param.train_force:
+                            valid_log_line += f"{vld_loss_Force:21.10e}"
+                        if self.input_param.optimizer_param.train_virial:
+                            valid_log_line += f"{val_loss_virial_per_atom:23.10e}"
+                        f_valid_log.write(f"{valid_log_line}\n")
+            # 保存检查点
+            if self.is_rank_0:
+                checkpoint_dict = {
+                    "json_file": self.input_param.to_dict(),
                     "epoch": epoch,
-                    "state_dict": model.state_dict(),
-                    "energy_shift":energy_shift,
-                    "max_neighbor": [model.max_NN_radial, model.max_NN_angular],
-                    "atom_type_order": self.input_param.atom_type,    #atom type order of davg/dstd/energy_shift, the user input order
-                    # "sij_max":Sij_max,
-                    "q_scaler": model.get_q_scaler(),
-                    "optimizer":optimizer.state_dict()
-                    },
+                    "state_dict": model.state_dict()
+                    # "energy_shift": energy_shift,
+                    # "max_neighbor": [model.module.max_NN_radial, model.module.max_NN_angular],
+                    # "atom_type_order": self.input_param.atom_type
+                    # "q_scaler": model.module.get_q_scaler(),
+                }
+                if self.input_param.optimizer_param.opt_name in ["LKF", "GKF"] and self.input_param.file_paths.save_p_matrix:
+                    checkpoint_dict["optimizer"] = optimizer.state_dict()
+                save_checkpoint(
+                    checkpoint_dict,
                     self.input_param.file_paths.model_name,
                     self.input_param.file_paths.model_store_dir,
                 )
-            else: # ADAM or SGD optimizer
-                save_checkpoint(
-                    {
-                    "json_file":self.input_param.to_dict(),
-                    "epoch": epoch,
-                    "state_dict": model.state_dict(),
-                    "energy_shift":energy_shift,
-                    "max_neighbor": [model.max_NN_radial, model.max_NN_angular],
-                    "q_scaler": model.get_q_scaler(),
-                    "atom_type_order": self.input_param.atom_type    #atom type order of davg/dstd/energy_shift
-                    # "optimizer":optimizer.state_dict()
-                    # "sij_max":Sij_max
-                    },
-                    self.input_param.file_paths.model_name,
-                    self.input_param.file_paths.model_store_dir,
-                )
-                # if use CosineAnnealingWarmRestarts, save the model before restarting learning rate
+                self.convert_to_gpumd()
+
                 if self.input_param.optimizer_param.t_0 is not None and \
                     is_epoch_before_restart(self.input_param.optimizer_param.t_0, self.input_param.optimizer_param.t_mult, epoch):
-                    save_path = os.path.join(self.input_param.file_paths.model_store_dir, "saved_models")
-                    if os.path.exists(save_path) is not True:
-                        os.makedirs(save_path)
-                    save_checkpoint({
-                                    "json_file":self.input_param.to_dict(),
-                                    "epoch": epoch,
-                                    "state_dict": model.state_dict(),
-                                    "energy_shift":energy_shift,
-                                    "max_neighbor": [model.max_NN_radial, model.max_NN_angular],
-                                    "q_scaler": model.get_q_scaler(),
-                                    "atom_type_order": self.input_param.atom_type    #atom type order of davg/dstd/energy_shift
-                                    # "optimizer":optimizer.state_dict()
-                                    # "sij_max":Sij_max
-                                    },
+                    save_checkpoint(checkpoint_dict,
                                     f'epoch_{epoch}_{self.input_param.file_paths.model_name}',
-                                    save_path,
-                        )
-                    self.convert_to_gpumd_saved_models(f"epoch_{epoch}_", save_path)
+                                    self.input_param.file_paths.model_store_dir,
+                                    )
+                    self.convert_to_gpumd(prefix=f"epoch_{epoch}_")
 
-            self.convert_to_gpumd()
+        # 清理 DDP 环境
+        if self.input_param.world_size > 1:
+            dist.destroy_process_group()
             
     '''
     description: 
@@ -579,73 +569,13 @@ class nep_network:
     return {*}
     author: wuxingxing
     '''
-    def convert_to_gpumd(self):
+    def convert_to_gpumd(self, prefix=""):
         ckpt_path = os.path.join(self.input_param.file_paths.model_store_dir, self.input_param.file_paths.model_name)
-        save_nep_txt_path = os.path.join(self.input_param.file_paths.model_store_dir, self.input_param.file_paths.nep_model_file)            
+        save_nep_txt_path = os.path.join(self.input_param.file_paths.model_store_dir, f"{prefix}{self.input_param.file_paths.nep_model_file}")
         # extract parameters
         nep_content, model_atom_type, atom_names = extract_model(ckpt_path)
         with open(save_nep_txt_path, 'w') as wf:
                 wf.writelines(nep_content)
-        # print("Successfully convert to nep.in and nep.txt file.") 
-
-    def convert_to_gpumd_saved_models(self, prefix="", save_path=None):
-        ckpt_path = os.path.join(self.input_param.file_paths.model_store_dir, self.input_param.file_paths.model_name)
-        save_nep_txt_path = os.path.join(save_path, f"{prefix}{self.input_param.file_paths.nep_model_file}")            
-        # extract parameters
-        nep_content, model_atom_type, atom_names = extract_model(ckpt_path)
-        with open(save_nep_txt_path, 'w') as wf:
-                wf.writelines(nep_content)
-        # print("Successfully convert to nep.in and nep.txt file.") 
-        
-    def evaluate(self,num_thread = 1):
-        """
-            evaluate a model against AIMD
-            put a MOVEMENT in /MD and run MD100 
-        """
-        if not os.path.exists("MD/MOVEMENT"):
-            raise Exception("MD/MOVEMENT not found")
-        import md100
-        md100.run_md100(imodel = 5, atom_type = self.input_param.atom_type, num_process = num_thread) 
-        
-    def plot_evaluation(self):
-        if not os.path.exists("MOVEMENT"):
-            raise Exception("MOVEMENT not found. It should be force field MD result")
-        import src.aux.plot_evaluation as plot_evaluation
-        plot_evaluation.plot()
-
-    def run_md(self, init_config = "atom.config", md_details = None, num_thread = 1,follow = False):
-        import subprocess 
-
-        # remove existing MOVEMENT file for not 
-        if follow == False:
-            os.system('rm -f MOVEMENT')     
-        
-        if md_details is None:
-            raise Exception("md detail is missing")
-        
-        md_detail_line = str(md_details)[1:-1]+"\n"
-        
-        if os.path.exists(init_config) is not True: 
-            raise Exception("initial config for MD is not found")
-        
-        # preparing md.input 
-        f = open('md.input', 'w')
-        f.write(init_config+"\n")
-
-        f.write(md_detail_line) 
-        f.write('F\n')
-        f.write("5\n")     # imodel=1,2,3.    {1:linear;  2:VV;   3:NN, 5: dp 
-        f.write('1\n')               # interval for MOVEMENT output
-        f.write('%d\n' % len(self.input_param.atom_type)) 
-        
-        for i in range(len(self.input_param.atom_type)):
-            f.write('%d %d\n' % (self.input_param.atom_type[i], 2*self.input_param.atom_type[i]))
-        f.close()    
-        
-        # creating md.input for main_MD.x 
-        command = r'mpirun -n ' + str(num_thread) + r' main_MD.x'
-        print (command)
-        subprocess.run(command, shell=True) 
 
     # mulit cpu, code has error
     def process_image(self, idx, image):
@@ -782,7 +712,6 @@ class nep_network:
         write_arrays_to_file(os.path.join(inference_path, "inference_virial.txt"), virial_predict_list, head_line="#\txx\txy\txz\tyy\tyz\tzz")
 
         # res_pd.to_csv(os.path.join(inference_path, "inference_loss.csv"))
-
         rmse_E, rmse_F, rmse_V, e_r2, f_r2, v_r2 = inference_plot(inference_path)
         inference_cout = ""
         inference_cout += "For {} images: \n".format(len(images))
@@ -797,11 +726,9 @@ class nep_network:
         time2 = time.time()
         print("The test work finished, cost time {} s".format(time2 - time0))
 
-
-
     '''
     description: 
-    replaced by multi_process_nep_inference
+    has been replaced by multi_process_nep_inference
     param {*} self
     return {*}
     author: wuxingxing
@@ -811,9 +738,9 @@ class nep_network:
         energy_shift, train_loader, val_loader, _ = self.load_data()
         model, optimizer,_ = self.load_model_optimizer(energy_shift)
         max_NN_radial, min_NN_radial, max_NN_angular, min_NN_angular = \
-                        calculate_neighbor_num_max_min(train_loader, device = self.device)
+                        calculate_neighbor_num_max_min(dataset=train_loader.train_datset, device = self.device)
         
-        model.max_NN_radial  = max(model.max_NN_radial, max_NN_radial)
+        model.max_NN_radial  = max(model.max_NN_radial, max_NN_radial) # for single gpu
         model.max_NN_angular = max(model.max_NN_angular, max_NN_angular)
     
         start = time.time()
@@ -839,15 +766,17 @@ class nep_network:
         write_arrays_to_file(os.path.join(inference_path, "inference_virial.txt"), virial_predict_list, head_line="#\txx\txy\txz\tyy\tyz\tzz")
 
         # res_pd.to_csv(os.path.join(inference_path, "inference_loss.csv"))
+
         rmse_E, rmse_F, rmse_V, e_r2, f_r2, v_r2 = inference_plot(inference_path)
 
         inference_cout = ""
         inference_cout += "For {} images: \n".format(res_pd.shape[0])
-        inference_cout += "Average RMSE of Etot per atom: {} R2: {}\n".format(rmse_E, e_r2)
-        inference_cout += "Average RMSE of Force: {} R2: {}\n".format(rmse_F, f_r2)
-        inference_cout += "Average RMSE of Virial per atom: {} R2: {}\n".format(rmse_V, v_r2)
+        inference_cout += "Average RMSE of Etot per atom: {} \n".format(rmse_E)
+        inference_cout += "Average RMSE of Force: {} \n".format(rmse_F)
+        inference_cout += "Average RMSE of Virial per atom: {} \n".format(rmse_V)
         inference_cout += "\nMore details can be found under the file directory:\n{}\n".format(os.path.realpath(self.input_param.file_paths.test_dir))
         print(inference_cout)
         with open(os.path.join(inference_path, "inference_summary.txt"), 'w') as wf:
             wf.writelines(inference_cout)
+
 

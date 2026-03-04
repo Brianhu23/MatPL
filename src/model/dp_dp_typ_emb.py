@@ -9,7 +9,7 @@ sys.path.append(os.getcwd())
 
 from src.model.dp_embedding_typ_emb import EmbeddingNet, FittingNet
 # from src.model.calculate_force import CalculateCompress, CalculateForce, CalculateVirialForce
-from utils.atom_type_emb_dict import get_normalized_data_list
+from src.utils.atom_type_emb_dict import get_normalized_data_list
 
 if torch.cuda.is_available():
     lib_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "op/build/lib/libCalcOps_bind.so")

@@ -7,12 +7,12 @@ from enum import Enum
 import torch
 from torch.utils.data import Subset
 from torch.autograd import Variable
-from loss.dploss import dp_loss, adjust_lr
+from loss.dploss import calc_loss, adjust_lr
 from optimizer.KFWrapper import KFOptimizerWrapper
 # import horovod.torch as hvd
 from src.aux.inference_plot import inference_plot
 from src.user.input_param import InputParam
-from utils.file_operation import write_arrays_to_file
+from src.utils.file_operation import write_arrays_to_file
 
 def print_l1_l2(model):
     params = model.parameters()
@@ -170,7 +170,7 @@ def train(train_loader, model, criterion, optimizer, epoch, start_lr, device, ar
             loss_val += loss_Egroup_val
 
         if args.optimizer_param.train_egroup is True and args.optimizer_param.train_virial is True:
-            loss, _, _ = dp_loss(
+            loss, _, _ = calc_loss(
                 args,
                 0.001,
                 real_lr,
@@ -188,7 +188,7 @@ def train(train_loader, model, criterion, optimizer, epoch, start_lr, device, ar
                 natoms_img[0, 0].item(),
             )
         elif args.optimizer_param.train_egroup is True and args.optimizer_param.train_virial is False:
-            loss, _, _ = dp_loss(
+            loss, _, _ = calc_loss(
                 args,
                 0.001,
                 real_lr,
@@ -204,7 +204,7 @@ def train(train_loader, model, criterion, optimizer, epoch, start_lr, device, ar
                 natoms_img[0, 0].item(),
             )
         elif args.optimizer_param.train_egroup is False and args.optimizer_param.train_virial is True:
-            loss, _, _ = dp_loss(
+            loss, _, _ = calc_loss(
                 args,
                 0.001,
                 real_lr,
@@ -220,7 +220,7 @@ def train(train_loader, model, criterion, optimizer, epoch, start_lr, device, ar
                 natoms_img[0, 0].item(),
             )
         else:
-            loss, _, _ = dp_loss(
+            loss, _, _ = calc_loss(
                 args,
                 0.001,
                 real_lr,

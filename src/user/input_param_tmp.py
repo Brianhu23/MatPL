@@ -1,7 +1,7 @@
 import os
 import json
-from utils.json_operation import get_parameter, get_required_parameter
-from utils.nep_to_gpumd import get_atomic_name_from_str
+from src.utils.json_operation import get_parameter, get_required_parameter
+from src.utils.nep_to_gpumd import get_atomic_name_from_str
 from src.user.nn_feature_type import Descriptor
 from src.user.model_param import ModelParam
 from src.user.optimizer_param import OptimizerParam

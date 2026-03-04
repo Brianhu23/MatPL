@@ -1,4 +1,4 @@
-from utils.json_operation import get_parameter, get_required_parameter
+from src.utils.json_operation import get_parameter, get_required_parameter
 from src.user.nep_param import NepParam
 
 class OptimizerParam(object):
@@ -33,7 +33,7 @@ class OptimizerParam(object):
         self.t_mult   = get_parameter("t_mult", optimizer_dict, None)
         if (self.t_0 is None and self.t_mult is not None) or (self.t_0 is not None and self.t_mult is None):
             raise Exception("ERROR! the input t_0 and t_mult need to be set simultaneously!")
-        self.verbose  = get_parameter("verbose", optimizer_dict, False) # nouse
+        # self.verbose  = get_parameter("verbose", optimizer_dict, False) # nouse
 
         self.lambda_1 = None
         if "lambda_1" in optimizer_dict:
@@ -46,8 +46,8 @@ class OptimizerParam(object):
         if self.lambda_2 is not None and self.lambda_2 < 0:
             raise Exception("ERROR! the lambda_2 should >= 0 !")
 
-        self.scale_lr = get_parameter("scale_lr",optimizer_dict, False) #缩放学习率,单节点单卡不缩放，按照卡数*学习率缩放
-        self.scaling_method = get_parameter("scaling_method",optimizer_dict, "sqrt")  #scale_lr 为True后启用 sqrt linear
+        self.warmup = get_parameter("warm_epochs",optimizer_dict, None) #预热epochs
+        self.scaling_method = get_parameter("scaling_method",optimizer_dict, "sqrt")  # linear_gpu sqrt_batch sqrt_gpu sqrt sqrt_batch_gpu_atom defalt is (avg_atom_nums) ** 0.5
 
         if "KF" in self.opt_name.upper():  #set Kalman Filter Optimizer params
             self.kalman_lambda = get_parameter("kalman_lambda", optimizer_dict, 0.98)

@@ -18,7 +18,7 @@ import src.pre_data.dp_mlff as dp_mlff
 from src.user.input_param import InputParam
 from src.pre_data.cheby_data_loader import MovementDataset
 from src.PWMLFF.cheby_mods.cheby_trainer import train_KF, train, valid, save_checkpoint, predict
-from utils.file_operation import write_arrays_to_file, smlink_file
+from src.utils.file_operation import write_arrays_to_file, smlink_file
 from numpy.ctypeslib import ndpointer
 import ctypes
 lib_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

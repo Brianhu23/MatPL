@@ -1,7 +1,7 @@
 import json
 import os 
 
-from utils.json_operation import get_parameter, get_required_parameter
+from src.utils.json_operation import get_parameter, get_required_parameter
 
 class GPUmdParam(object):
     '''

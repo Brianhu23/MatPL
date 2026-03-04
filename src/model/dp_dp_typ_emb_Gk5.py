@@ -12,7 +12,7 @@ sys.path.append(os.getcwd())
 # pp.readFeatnum()
 from src.model.dp_embedding_typ_emb import EmbeddingNet, FittingNet
 from src.model.calculate_force import CalculateForce, CalculateVirialForce
-from utils.atom_type_emb_dict import get_normalized_data_list
+from src.utils.atom_type_emb_dict import get_normalized_data_list
 
 # logging and our extension
 import logging

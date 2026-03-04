@@ -1,8 +1,8 @@
 import os
 import numpy as np
-from utils.atom_type_emb_dict import element_table
-from utils.json_operation import get_parameter
-from utils.nep_to_gpumd import get_atomic_name_from_str
+from src.utils.atom_type_emb_dict import element_table
+from src.utils.json_operation import get_parameter
+from src.utils.nep_to_gpumd import get_atomic_name_from_str
 
 '''
 description: 
@@ -37,57 +37,6 @@ class NepParam(object):
         self.fix_cij = False
         self.fix_hiddenlayer=False
         self.fix_outlayer=False
-    '''
-    description: 
-        extract nep params from nep.in file
-    param {*} self
-    param {*} nep_in_file
-    param {list} type_list
-    return {*}
-    author: wuxingxing
-    '''
-    def set_nep_param_from_nep_in(self, nep_in_file, type_list:list[int]=[]) -> None:
-        nep_file_dict = {}
-        self.nep_in_file = nep_in_file
-        if nep_in_file is not None:
-            if not os.path.exists(nep_in_file):
-                raise Exception("ERROR! the nep.in file is not exist, please check the file: {}".format(nep_in_file))
-            nep_file_dict = self.read_nep_param_from_nep_file(nep_in_file)
-            
-        self.version = get_parameter("version", nep_file_dict, 4) # select between NEP2, NEP3, and NEP4
-        if self.version != 4:
-            raise Exception("ERROR! Only support NEP4!")
-        type_str = self.set_atom_type(type_list)
-        self.type = get_parameter("type", nep_file_dict, type_str) # number of atom types and list of chemical species
-        self.type_num = len(self.type.split()[1:])
-        type_list_weight_default = [1.0 for _ in range(0, self.type_num)]
-        self.type_weight = get_parameter("type_weight", nep_file_dict, type_list_weight_default) # force weights for different atom types
-        self.model_type = get_parameter("model_type", nep_file_dict, 0) # select to train potential 0, dipole 1, or polarizability 2
-        self.zbl = get_parameter("zbl", nep_file_dict, None) # outer cutoff for the universal ZBL potential [Ziegler1985]
-        
-        self.cutoff = get_parameter("cutoff", nep_file_dict, [8.0, 4.0], out_format=4) # radial () and angular () cutoffs # use dp rcut, default to 6
-        self.n_max = get_parameter("n_max", nep_file_dict, [4, 4], out_format=2) # size of radial () and angular () basis
-        if len(self.n_max) != 2:
-            raise Exception("Error ! The input 'n_max' should has 2 values, default is [4, 4]")
-        if self.n_max[0] <=0 or self.n_max[0] >= 20 or self.n_max[1] <=0 or self.n_max[1] >= 20:
-            raise Exception("Error ! The input 'n_max' value should: 0 < n_max < 20")
-        
-        self.basis_size = get_parameter("basis_size", nep_file_dict, [8, 8], out_format=2) # number of radial () and angular () basis functions
-        if len(self.basis_size) != 2:
-            raise Exception("the input 'basis_size' should has 2 values, such as [8, 8]")
-        if self.basis_size[0] <=0 or self.basis_size[0] >= 20 or self.basis_size[1] <=0 or self.basis_size[1] >= 20:
-            raise Exception("Error ! The input 'basis_size' value should: 0 < basis_size < 20")
-        
-        self.l_max = get_parameter("l_max", nep_file_dict, [4, 2, 1], out_format=2) # expansion order for angular terms
-        if len(self.l_max) != 3 or (self.l_max[0] != 4) or (self.l_max[1] != 2) or (self.l_max[2] > 1) :
-            error_log = "the input 'l_max' should has 3 values. The values should be [4, 2, 0] or [4, 2, 1]. The last num '1', means use 5 body features.\n"
-            raise Exception(error_log)
-        if self.l_max[2] != 0 and self.l_max[2] != 1:
-            error_log = "the input 'l_max' should has 3 values. The values should be [4, 2, 0] or [4, 2, 1]. The last num '1', means use 5 body features, '0' means not use 5 body features\n"
-            raise Exception(error_log)
-        self.neuron = get_parameter("neuron", nep_file_dict, 100, out_format=1) # number of neurons in the hidden layer
-        self.neuron = [self.neuron, 1]
-        self.set_feature_params()
 
     '''
     description: 
@@ -261,7 +210,7 @@ class NepParam(object):
         descriptor_dict = get_parameter("descriptor", model_dict, {})
         # optimizer_dict = get_parameter("optimizer", json_dict, {})
 
-        self.version = 4 # select between NEP2, NEP3, and NEP4
+        self.version = 5
         type_str = self.set_atom_type(type_list)
         self.type = type_str # number of atom types and list of chemical species
         self.type_num = len(type_list)
@@ -280,17 +229,23 @@ class NepParam(object):
         self.n_max = get_parameter("n_max", descriptor_dict, [4, 4]) # size of radial () and angular () basis
         if len(self.n_max) != 2:
             raise Exception("the input 'n_max' should has 2 values, such as [4, 4]")
+        if self.n_max[0] <=0 or self.n_max[0] >= 20 or self.n_max[1] <=0 or self.n_max[1] >= 20:
+            raise Exception("Error ! The input 'n_max' value should: 0 < n_max < 20")
+                
         self.basis_size = get_parameter("basis_size", descriptor_dict, [12, 12]) # number of radial () and angular () basis functions
         if len(self.basis_size) != 2:
             raise Exception("the input 'basis_size' should has 2 values, such as [12, 12]")
-        self.l_max = get_parameter("l_max", descriptor_dict, [4, 2, 1]) # expansion order for angular terms
-        if len(self.l_max) != 3 :
-            error_log = "the input 'l_max' should has 3 values. The values should be [4, 0, 0] (only use three body features), [4, 2, 0] (use 3 and 4 body features) or [4, 2, 1] (use 3,4,5 body features).\n"
-            raise Exception(error_log)
+        if self.basis_size[0] <=0 or self.basis_size[0] >= 20 or self.basis_size[1] <=0 or self.basis_size[1] >= 20:
+            raise Exception("Error ! The input 'basis_size' value should: 0 < basis_size < 20")
         
-        if (self.l_max[2] in [0, 1]) is False or (self.l_max[1] in [0, 2]) is False:
-            error_log = "the input 'l_max' should has 3 values. The values should be [4, 0, 0] (only use three body features), [4, 2, 0] (use 3 and 4 body features) or [4, 2, 1] (use 3,4,5 body features).\n"
+        self.l_max = get_parameter("l_max", descriptor_dict, [4, 2, 1]) # expansion order for angular terms
+        if len(self.l_max) != 3 or (self.l_max[0] != 4) or (self.l_max[1] != 2) or (self.l_max[2] > 1) :
+            error_log = "the input 'l_max' should has 3 values. The values should be [4, 2, 0] or [4, 2, 1]. The last num '1', means use 5 body features.\n"
             raise Exception(error_log)
+        if self.l_max[2] != 0 and self.l_max[2] != 1:
+            error_log = "the input 'l_max' should has 3 values. The values should be [4, 2, 0] or [4, 2, 1]. The last num '1', means use 5 body features, '0' means not use 5 body features\n"
+            raise Exception(error_log)
+
         if "fitting_net" in model_dict.keys():
             self.neuron = get_parameter("network_size", model_dict["fitting_net"], [40]) # number of neurons in the hidden layer
             if not isinstance(self.neuron, list):

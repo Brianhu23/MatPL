@@ -1,21 +1,7 @@
 import numpy as np
 from src.user.input_param import InputParam
-# def dp_loss(
-#     start_lr,
-#     real_lr,
-#     has_fi,
-#     lossFi,
-#     has_etot,
-#     loss_Etot,
-#     has_virial,
-#     loss_Virial,
-#     has_egroup,
-#     loss_Egroup,
-#     has_ei,
-#     loss_Ei,
-#     natoms_sum,
-# ):
-def dp_loss(dp_param:InputParam, start_lr, real_lr, stat, *args):
+
+def calc_loss(input_param:InputParam, start_lr, real_lr, stat, *args):
 
     if stat == 1:   
         has_fi, lossFi, has_etot, loss_Etot, has_virial, loss_Virial, has_egroup, loss_Egroup, has_ei, loss_Ei, natoms_sum = args
@@ -26,11 +12,11 @@ def dp_loss(dp_param:InputParam, start_lr, real_lr, stat, *args):
     else:   # no virial and egroup
         has_fi, lossFi, has_etot, loss_Etot, has_ei, loss_Ei, natoms_sum = args
 
-    start_pref_egroup, limit_pref_egroup = dp_param.optimizer_param.start_pre_fac_egroup, dp_param.optimizer_param.end_pre_fac_egroup
-    start_pref_F, limit_pref_F = dp_param.optimizer_param.start_pre_fac_force, dp_param.optimizer_param.end_pre_fac_force # 1000, 1.0
-    start_pref_etot, limit_pref_etot = dp_param.optimizer_param.start_pre_fac_etot, dp_param.optimizer_param.end_pre_fac_etot # 0.02, 1.0
-    start_pref_virial, limit_pref_virial = dp_param.optimizer_param.start_pre_fac_virial, dp_param.optimizer_param.end_pre_fac_virial # 50.0, 1
-    start_pref_ei, limit_pref_ei =dp_param.optimizer_param.start_pre_fac_ei, dp_param.optimizer_param.end_pre_fac_ei # 0.1, 2.0
+    start_pref_egroup, limit_pref_egroup = input_param.optimizer_param.start_pre_fac_egroup, input_param.optimizer_param.end_pre_fac_egroup
+    start_pref_F, limit_pref_F = input_param.optimizer_param.start_pre_fac_force, input_param.optimizer_param.end_pre_fac_force # 1000, 1.0
+    start_pref_etot, limit_pref_etot = input_param.optimizer_param.start_pre_fac_etot, input_param.optimizer_param.end_pre_fac_etot # 0.02, 1.0
+    start_pref_virial, limit_pref_virial = input_param.optimizer_param.start_pre_fac_virial, input_param.optimizer_param.end_pre_fac_virial # 50.0, 1
+    start_pref_ei, limit_pref_ei =input_param.optimizer_param.start_pre_fac_ei, input_param.optimizer_param.end_pre_fac_ei # 0.1, 2.0
 
     pref_fi = has_fi * (
         limit_pref_F + (start_pref_F - limit_pref_F) * real_lr / start_lr
@@ -72,8 +58,16 @@ def adjust_lr(iter, start_lr, stop_step, decay_step, stop_lr=3.51e-8):
     if iter > stop_step: # or real_lr < stop_lr
         return stop_lr
 
-    decay_rate = np.exp(
-        np.log(stop_lr / start_lr) / (stop_step / decay_step)
-    )  # 0.9500064099092085
+    decay_rate = np.exp(np.log(stop_lr / start_lr) / (stop_step / decay_step))  # 0.9500064099092085
     real_lr = start_lr * np.power(decay_rate, (iter // decay_step))
     return real_lr
+
+"""
+预热阶段，线性增加学习率
+"""
+def warmup_lr(iter, iternum, cur_epoch, warm_epochs, start_lr, end_lr):
+    if cur_epoch <= warm_epochs:
+        cur_epoch = cur_epoch - 1 # epoch 从1开始计数
+        return start_lr + (cur_epoch * iternum + iter) / (warm_epochs * iternum) * (end_lr - start_lr)
+    else:
+        raise Exception(f"ERROR! The current epochs {cur_epoch} > warmepoch nums {warm_epochs}")

@@ -9,7 +9,7 @@ BASE_DIR=$(pwd)  # src directory
 BIN_DIR="$BASE_DIR/bin"
 LIB_DIR="$BASE_DIR/lib"
 NEP_CPU_DIR="$BASE_DIR/feature/nep_find_neigh"
-NEP_GPU_DIR="$BASE_DIR/NEP_GPU"
+NEP_GPU_DIR="$BASE_DIR/feature/NEP_GPU"
 OP_DIR="$BASE_DIR/op"
 
 # Function to display help information

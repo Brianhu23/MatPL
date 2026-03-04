@@ -1,6 +1,6 @@
 import os
 import shutil
-from utils.file_operation import copy_file
+from src.utils.file_operation import copy_file
 from src.user.gpumd_param import GPUmdParam
 from pwdata import Config
 from pwdata.calculators.const import elements

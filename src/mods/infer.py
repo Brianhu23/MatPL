@@ -10,7 +10,7 @@ from src.pre_data.dp_data_loader import type_map
 # , find_neighbore
 from src.pre_data.dpuni_data_loader import find_neighbore
 from pwdata import Config
-from utils.nep_to_gpumd import extract_model, get_atomic_number_from_name
+from src.utils.nep_to_gpumd import extract_model, get_atomic_number_from_name
 from src.user.convert_model import get_model_type, is_nep_txt, is_nep_ckpt
 
 class Inference(object):

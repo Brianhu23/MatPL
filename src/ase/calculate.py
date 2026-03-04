@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from utils.file_operation import check_model_type
+from src.utils.file_operation import check_model_type
 from src.mods.infer import Inference
 
 from ase.calculators.calculator import (

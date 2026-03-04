@@ -272,7 +272,7 @@ class ChebyNet(nn.Module):
                                dtype: torch.dtype) -> Tuple[torch.Tensor, torch.Tensor]:
         mask: List[Optional[torch.Tensor]] = [torch.ones_like(Ei)]
         dE = torch.autograd.grad([Ei], [feat], grad_outputs=mask, retain_graph=True, create_graph=True)[0]
-        # from utils.debug_operation import check_cuda_memory
+        # from src.utils.debug_operation import check_cuda_memory
         # print("000000000000000000000000000")
         # check_cuda_memory(1, 1, 1)
         assert dE is not None

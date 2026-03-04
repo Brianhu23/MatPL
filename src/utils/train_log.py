@@ -12,7 +12,9 @@ class Summary(Enum):
 class AverageMeter(object):
     """Computes and stores the average and current value"""
 
-    def __init__(self, name, fmt=":f", summary_type=Summary.AVERAGE):
+    def __init__(self, name, fmt=":f", summary_type=Summary.AVERAGE, device=None, world_size=1):
+        self.device = device
+        self.world_size = world_size
         self.name = name
         self.fmt = fmt
         self.summary_type = summary_type
@@ -41,19 +43,13 @@ class AverageMeter(object):
                 self.root = self.avg**0.5
 
     def all_reduce(self):
-        if torch.cuda.is_available():
-            device = torch.device("cuda")
-        elif torch.backends.mps.is_available():
-            device = torch.device("mps")
-        else:
-            device = torch.device("cpu")
-
-        total = torch.tensor([self.sum, self.count], dtype=torch.float32, device=device)
-        # total = hvd.allreduce(total, hvd.Sum)
-        # dist.all_reduce(total, dist.ReduceOp.SUM, async_op=False)
-        self.sum, self.count = total.tolist()
-        self.avg = self.sum / self.count
-        self.root = self.avg**0.5
+        if torch.distributed.is_initialized():
+            total = torch.tensor([self.root, self.val, self.avg], 
+                               dtype=torch.float32, 
+                               device = self.device)
+            torch.distributed.all_reduce(total, op=torch.distributed.ReduceOp.AVG)
+        self.root, self.val, self.avg = total.tolist()
+        # print(f" after reduce: name: {self.name} root: {self.root} val: {self.val} avg: {self.avg} ")
 
     def __str__(self):
         if self.summary_type is Summary.AVERAGE:
@@ -85,6 +81,10 @@ class ProgressMeter(object):
         self.batch_fmtstr = self._get_batch_fmtstr(num_batches)
         self.meters = meters
         self.prefix = prefix
+
+    def sync_meters(self):
+        for meter in self.meters:
+            meter.all_reduce()
 
     def display(self, batch):
         entries = [self.prefix + self.batch_fmtstr.format(batch)]

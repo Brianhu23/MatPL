@@ -1,5 +1,6 @@
 import sys, os
 import time
+import random
 from math import pi as PI
 import numpy as np
 import torch
@@ -10,10 +11,9 @@ from torch.nn.init import normal_ as normal
 from typing import List, Tuple, Optional
 from src.user.input_param import InputParam
 from src.user.nep_param import NepParam
-from utils.debug_operation import check_cuda_memory
+from src.utils.debug_operation import check_cuda_memory
 sys.path.append(os.getcwd())
 from src.model.nep_fitting import FittingNet
-# from src.model.calculate_force import CalculateCompress, CalculateForce, CalculateVirialForce
 if torch.cuda.is_available():
     lib_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "op/build/lib/libCalcOps_bind.so")
     torch.ops.load_library(lib_path)
@@ -22,14 +22,21 @@ else:
     lib_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "op/build/lib/libCalcOps_bind_cpu.so")
     torch.ops.load_library(lib_path)    # load the custom op, no use for cpu version
     CalcOps = torch.ops.CalcOps_cpu     # only for compile while no cuda device
-    
+   
 class NEP(nn.Module):
-    def __init__(self, input_param:InputParam, energy_shift):
+    def __init__(self, input_param:InputParam=None, energy_shift=None, rank=0, q_scaler = None, max_NN_radial = -1, max_NN_angular = -1, dtype=None, device=None):
         super(NEP, self).__init__()
+        self.input_param = input_param
+        if self.input_param.seed is not None:
+            random.seed(self.input_param.seed)
+            np.random.seed(self.input_param.seed)
+            torch.manual_seed(self.input_param.seed)
+            torch.cuda.manual_seed_all(self.input_param.seed)  # 为所有 GPU 设置种子
+        self.dtype = dtype
+        self.device = device
         self.Pi = PI
         self.half_Pi = self.Pi/2
         self.model_type = input_param.model_type.upper()
-        self.input_param = input_param
         self.set_init_nep_param(input_param)
         self.zbl = input_param.nep_param.zbl
         if self.input_param.precision == "float64":
@@ -40,10 +47,20 @@ class NEP(nn.Module):
             raise RuntimeError("train(): unsupported training data type")
         self.energy_shift = energy_shift        
         self.set_cparam(np.mean(energy_shift))
+        
+        # 注册缓冲区
+        self.register_buffer('q_scaler', None)
+        self.register_buffer('C3B', None)
+        self.register_buffer('C4B', None)
+        self.register_buffer('C5B', None)
+        self.register_buffer('atom_type_device', None)
+        self.register_buffer('max_NN_radial', torch.tensor(max_NN_radial, dtype=torch.int64))
+        self.register_buffer('max_NN_angular', torch.tensor(max_NN_angular, dtype=torch.int64))
 
-        # self.maxNeighborNum = input_param.max_neigh_num nep this value is calculated online
+        # 初始化缓冲区
+        self._initialize_buffers(q_scaler = q_scaler)
         self.fitting_net = nn.ModuleList()
-        self.update_scaler = True
+
         for i in range(self.ntypes):
             nep_txt_param = None
             if input_param.nep_param.c2_param is not None:
@@ -57,18 +74,39 @@ class NEP(nn.Module):
                                                     magic     = False,
                                                     nep_txt_param = nep_txt_param,
                                                     last_bias= True,
-                                                    fix_hiddenlayer=self.input_param.nep_param.fix_hiddenlayer,
-                                                    fix_outlayer=self.input_param.nep_param.fix_outlayer
                                                     #    self.nep_param["net_cfg"]["fitting_net"]["resnet_dt"],
                                                     #    self.nep_param["net_cfg"]["fitting_net"]["activation"], 
                                                     ))
-        self.max_neigh_num = self.input_param.max_neigh_num
-        self.max_NN_radial = -1 if self.input_param.nep_param.max_NN_radial is None else self.input_param.nep_param.max_NN_radial
-        self.max_NN_angular = -1 if self.input_param.nep_param.max_NN_angular is None else self.input_param.nep_param.max_NN_angular
+
+    def _initialize_buffers(self, q_scaler = None):
+        """初始化缓冲区，设置 q_max, q_min, C3B, C4B, C5B, atom_type_device 和 q_scaler（如果 nep.txt 提供）。"""
+        dtype = self.dtype
+        device = self.device  # 默认设备
+        if isinstance(q_scaler, torch.Tensor):
+            self.q_scaler = q_scaler.clone().detach().to(dtype=dtype, device=device)
+        else:
+            self.q_scaler = torch.tensor(q_scaler, dtype=dtype, device=device)
+        self.C3B = torch.tensor([0.238732414637843, 0.238732414637843, 0.238732414637843, #c10, c11, 12
+                0.099471839432435, 1.1936620731892151, 1.1936620731892151, 0.2984155182973038, 0.2984155182973038, #c20,c21=c22,c23=c24
+                0.139260575205408, 0.20889086280811264, 0.20889086280811264, 2.088908628081126, 2.088908628081126, 0.34815143801352105, 0.34815143801352105, #c30, c31=c32,c33=c34
+                0.01119058193614889, 0.44762327744595565, 0.44762327744595565, 0.22381163872297782, 0.22381163872297782, # c40, c41=c42, c43=c44
+                3.1333629421216895, 3.1333629421216895, 0.3916703677652112, 0.3916703677652112 #c45=c46, c47=c48
+                ], dtype=dtype, device=device)
+
+        self.C4B = torch.tensor([-0.007499480826664, -0.134990654879954, 0.067495327439977, 0.404971964639861, -0.809943929279723], 
+                                dtype=dtype, device=device)
+        
+        self.C5B = torch.tensor([0.026596810706114, 0.053193621412227, 0.026596810706114], 
+                                dtype=dtype, device=device)
+
+        # zbl
+        self.K_C_SP = 14.399645 # 1/(4*PI*epsilon_0)
+        self.zbl_para = [0.18175, 3.1998, 0.50986, 0.94229, 0.28022, 0.4029, 0.02817, 0.20162]
+        self.atom_type_device = torch.tensor(self.atom_type, dtype=torch.int64, device=device)
 
     '''
     description: 
-        for nep.txt ,no used, the params were extracted from ckpt files
+        for nep.txt 
     param {*} self
     return {*}
     author: wuxingxing
@@ -144,6 +182,7 @@ class NEP(nn.Module):
     def get_q_scaler(self):
         return self.q_scaler.cpu().detach().numpy()
 
+
     '''
     description: 
         c_params is init from randly or c_params if init from checkpoint
@@ -153,20 +192,16 @@ class NEP(nn.Module):
     author: wuxingxing
     '''    
     def set_cparam(self, energy_shift:float):
-        cij_requires_grad = self.input_param.nep_param.fix_cij is False
         if self.input_param.nep_param.c2_param is not None: #load from nep.txt
-            self.c_param_2 = torch.nn.Parameter(torch.tensor(self.input_param.nep_param.c2_param), requires_grad=cij_requires_grad)
-            
-            self.c_param_3 = torch.nn.Parameter(torch.tensor(self.input_param.nep_param.c3_param), requires_grad=cij_requires_grad) if self.l_max_3b > 0 else None
-            # add bias
-            
+            self.c_param_2 = torch.nn.Parameter(torch.tensor(self.input_param.nep_param.c2_param), requires_grad=True)
+            self.c_param_3 = torch.nn.Parameter(torch.tensor(self.input_param.nep_param.c3_param), requires_grad=True) if self.l_max_3b > 0 else None
         else: # init by randly (for first training) or checkpoint
             r_k = torch.normal(mean=0, std=1, size=(self.c_num,), dtype=self.dtype)
             m = torch.rand(self.c_num, dtype=self.dtype) - 0.5
             s = torch.full_like(m, 0.1)
             c_param = m + s*r_k
-            self.c_param_2 = torch.nn.Parameter(c_param[:self.two_c_num].reshape(self.ntypes, self.ntypes, (self.n_max_radial+1), (self.n_base_radial+1)), requires_grad=cij_requires_grad)
-            self.c_param_3 = torch.nn.Parameter(c_param[self.two_c_num : ].reshape(self.ntypes, self.ntypes, (self.n_max_angular+1), (self.n_base_angular+1)), requires_grad=cij_requires_grad)  if self.l_max_3b > 0 else None
+            self.c_param_2 = torch.nn.Parameter(c_param[:self.two_c_num].reshape(self.ntypes, self.ntypes, (self.n_max_radial+1), (self.n_base_radial+1)), requires_grad=True)
+            self.c_param_3 = torch.nn.Parameter(c_param[self.two_c_num : ].reshape(self.ntypes, self.ntypes, (self.n_max_angular+1), (self.n_base_angular+1)), requires_grad=True)  if self.l_max_3b > 0 else None
 
             # self.c_param_2 = torch.nn.Parameter(torch.ones([self.ntypes, self.ntypes, (self.n_max_radial+1), (self.n_base_radial+1)]), requires_grad=False)
             # self.c_param_3 = torch.nn.Parameter(torch.ones([self.ntypes, self.ntypes, (self.n_max_angular+1), (self.n_base_angular+1)]), requires_grad=False)
@@ -175,66 +210,7 @@ class NEP(nn.Module):
             # self.c_param_3 = torch.nn.Parameter(torch.normal(mean=0, std=0.5, size = (self.ntypes, self.ntypes, (self.n_max_angular+1), (self.n_base_angular+1))), requires_grad=True)
             
             # self.common_bias = torch.nn.Parameter(torch.tensor(energy_shift), requires_grad=True)
-            self.common_bias = None  # for nep common bias test
-
-    '''
-    description: 
-        init q_scaler params
-        if load from init
-            q_scaler set to None and calculate at first interation in first epoch
-            c_params init randly
-        if load from nep.txt
-
-        if load from checkpoint
-    param {*} self
-    param {*} q_scaler
-    return {*}
-    author: wuxingxing
-    '''    
-    def set_nep_param_device(self, q_scaler = None):
-        # init param c
-        dtype  = next(self.parameters()).dtype
-        device = next(self.parameters()).device
-        # load from nep.txt
-        self.q_max = torch.full([self.feature_nums], -float('inf'), requires_grad=False, dtype=dtype, device=device)  # 初始为无穷大
-        self.q_min = torch.full([self.feature_nums], float('inf'), requires_grad=False, dtype=dtype, device=device)  # 初始为负无穷大
-        if self.input_param.nep_param.q_scaler is not None:
-            self.q_scaler = torch.tensor(self.input_param.nep_param.q_scaler, dtype=dtype, device=device) #load from nep.txt
-        else:
-            if q_scaler is None:
-                # self.q_scaler = torch.full((self.feature_nums,), 0.01, device=device, dtype=dtype) # init 
-                self.q_scaler = None
-            else:
-                self.q_scaler = torch.tensor(q_scaler, dtype=dtype, device=device) # load from ckpt file
-
-        self.C3B = torch.tensor([0.238732414637843, 0.238732414637843, 0.238732414637843, #c10, c11, 12
-                0.099471839432435, 1.1936620731892151, 1.1936620731892151, 0.2984155182973038, 0.2984155182973038, #c20,c21=c22,c23=c24
-                0.139260575205408, 0.20889086280811264, 0.20889086280811264, 2.088908628081126, 2.088908628081126, 0.34815143801352105, 0.34815143801352105, #c30, c31=c32,c33=c34
-                0.01119058193614889, 0.44762327744595565, 0.44762327744595565, 0.22381163872297782, 0.22381163872297782, # c40, c41=c42, c43=c44
-                3.1333629421216895, 3.1333629421216895, 0.3916703677652112, 0.3916703677652112 #c45=c46, c47=c48
-                ], dtype=dtype, device=device)
-
-        self.C4B = torch.tensor([-0.007499480826664, -0.134990654879954, 0.067495327439977, 0.404971964639861, -0.809943929279723], 
-                                dtype=dtype, device=device)
-        
-        self.C5B = torch.tensor([0.026596810706114, 0.053193621412227, 0.026596810706114], 
-                                dtype=dtype, device=device)
-
-        # zbl
-        self.K_C_SP = 14.399645 # 1/(4*PI*epsilon_0)
-        self.zbl_para = [0.18175, 3.1998, 0.50986, 0.94229, 0.28022, 0.4029, 0.02817, 0.20162]
-        self.atom_type_device = torch.tensor(self.atom_type, dtype=torch.int64, device=device)
-        # self.c_param_2 = torch.normal(mean=0, std=1, size=(self.ntypes, self.ntypes, (self.n_max_radial+1), (self.n_base_radial+1)), dtype=self.dtype, device=device)
-        # self.c_param_3 = torch.normal(mean=0, std=1, size=(self.ntypes, self.ntypes, (self.n_max_angular+1), (self.n_base_angular+1)), dtype=self.dtype, device=device)
-
-        # self.c_param_2 = torch.ones([self.ntypes, self.ntypes, (self.n_max_radial+1), (self.n_base_radial+1)], dtype=self.dtype, device=device)
-        # self.c_param_3 = torch.ones([self.ntypes, self.ntypes, (self.n_max_angular+1), (self.n_base_angular+1)], dtype=self.dtype, device=device)
-
-        # print(self.c_param_2)
-        # print(self.c_param_3)
-
-    def reset_scaler(self, scaler:list, dtype, device):
-        self.q_scaler = torch.tensor(scaler, dtype=dtype, device=device) # load from ckpt file
+            # self.common_bias = None  # for nep common bias test
 
     def get_egroup(self,
                    Ei: torch.Tensor,
@@ -302,14 +278,6 @@ class NEP(nn.Module):
                 atom_type_map: torch.Tensor, 
                 Egroup_weight: Optional[torch.Tensor] = None, 
                 divider: Optional[torch.Tensor] = None, 
-                # list_neigh: torch.Tensor,   # int32
-                # ImageDR: torch.Tensor,      # float64
-                # list_neigh_type: torch.Tensor,
-                # list_neigh_angular: torch.Tensor,   # int32
-                # ImageDR_angular: torch.Tensor,      # float64
-                # list_neigh_type_angular: torch.Tensor,
-                # Imagetype_map: torch.Tensor,    # int32
-                # atom_type: torch.Tensor,    # int32
                 is_calc_f: Optional[bool] = True) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
         """
         Forward pass of the model.
@@ -383,12 +351,7 @@ class NEP(nn.Module):
                     feats = feat_3b
             else:
                 feats = feat_2b
-        # if self.q_scaler is None:
-        #     self.q_max, self.q_min = self.update_scaler_values(feats, self.two_feat_num, self.three_feat_num, self.n_max_angular, self.q_max, self.q_min, self.l_max_3b, self.l_max_4b, self.l_max_5b)
-        #     self.q_scaler = (1/(self.q_max-self.q_min)).detach()
-        # elif is_calc_f is False and self.update_scaler:
-        #     self.q_max, self.q_min = self.update_scaler_values(feats, self.two_feat_num, self.three_feat_num, self.n_max_angular, self.q_max, self.q_min, self.l_max_3b, self.l_max_4b, self.l_max_5b)
-        #     self.q_scaler = (1/(self.q_max-self.q_min)).detach()
+
         feats_in = self.q_scaler * feats
         # feats_in = (feats-self.q_min)/(self.q_max-self.q_min)
         Ei = self.calculate_Ei(atom_type_map, feats_in, device)
@@ -417,7 +380,6 @@ class NEP(nn.Module):
         split_sizes = num_atom.reshape(-1).tolist()
         energy_per_image = Ei.split(split_sizes)
         Etot = torch.stack([x.sum() for x in energy_per_image]).unsqueeze(-1)
-
         # Etot = torch.sum(Ei, 1).unsqueeze(1)
 
         if  is_calc_f is False: #False: # is_calc_f is False:   ##is_calc_f is False
@@ -702,29 +664,6 @@ class NEP(nn.Module):
         c2 = c_list.view(atom_nums, j_list_nums, n_max_r+1, n_base_r+1)
         return c2.transpose(2, 1)
 
-    # def get_c(self,
-    #         c : torch.Tensor,
-    #         n_max : int,
-    #         n_base:int,
-    #         Imagetype_map : torch.Tensor,
-    #         j_type_map : torch.Tensor) -> Tuple[torch.Tensor]: #get c params from c[n_type,n_type, n_max, n_base] 
-    #     batch_size = j_type_map.shape[0]
-    #     atom_nums = j_type_map.shape[1]
-    #     j_list_nums = j_type_map.shape[2]
-
-    #     # j_type_map = j_type_map.clone()
-    #     mask = j_type_map > -1
-    #     # j_type_map = j_type_map -1
-    #     j_type_map[mask] = (Imagetype_map*self.ntypes).unsqueeze(-1).unsqueeze(0).repeat(1, 1, 200)[mask]+j_type_map[mask]
-    #     j_type_map3 = j_type_map.flatten()
-    #     mask2 = j_type_map3 > -1
-    #     c_list = torch.zeros([j_type_map3.shape[0], n_max+1, n_base+1], dtype=c.dtype, device=c.device)
-    #     c1 = c.reshape(self.ntypes_sq, c.shape[-2],c.shape[-1])
-    #     c_list[mask2] = c1[j_type_map3[mask2]]
-    #     # c1 = c[Imagetype_map, :, :, :] # search by i
-    #     c1 = c_list.view(batch_size, atom_nums, j_list_nums, n_max+1, n_base+1)
-    #     return c1.transpose(3, 2)
-
     def cal_fk(self,
                 rij: torch.Tensor,
                 n_base: int,
@@ -775,7 +714,7 @@ class NEP(nn.Module):
         # mask_q0000: List[Optional[torch.Tensor]] = [torch.ones_like(feat_2b[0,0,0])]
         # dfeat_c2 = torch.autograd.grad([feat_2b[0,0,0]], [self.c_param_2], grad_outputs=mask_q0000, retain_graph=True, create_graph=True)[0]
 
-        return feat_2b # 检查下dp 的feature 和dfeature 维度,本应该对每一个feature，都有对应的rij的导数
+        return feat_2b 
 
     '''
     description: 
@@ -1029,38 +968,3 @@ class NEP(nn.Module):
 
     #     Ei_zbl = self.K_C_SP * ZiZj * phi / rij
         
-    def update_scaler_values(self, feats, two_feat_num, three_feat_num, n_max_angular, q_max, q_min, l_max_3b, l_max_4b, l_max_5b):
-        """
-        Update q_max and q_min for 2b, 3b, 4b, and 5b components.
-        """
-        feats_reshaped = feats.reshape([-1, feats.shape[-1]])
-        q_max_temp = torch.max(feats_reshaped, dim=-2)[0]
-        q_min_temp = torch.min(feats_reshaped, dim=-2)[0]
-
-        # Define slice ranges
-        slices = [(0, two_feat_num)]
-        if l_max_3b > 0:
-            slices.extend([
-                (two_feat_num, two_feat_num + (n_max_angular + 1)),
-                (two_feat_num + (n_max_angular + 1)    , two_feat_num + (n_max_angular + 1) * 2),
-                (two_feat_num + (n_max_angular + 1) * 2, two_feat_num + (n_max_angular + 1) * 3),
-                (two_feat_num + (n_max_angular + 1) * 3, two_feat_num + (n_max_angular + 1) * 4)
-                ]
-            )
-        if l_max_4b > 0:
-            slices.append(
-                (two_feat_num + three_feat_num, two_feat_num + three_feat_num + (n_max_angular + 1)))
-        if l_max_5b > 0:
-            slices.append(
-                (two_feat_num + three_feat_num + (n_max_angular + 1), two_feat_num + three_feat_num + (n_max_angular + 1) * 2))
-
-        # Update q_max and q_min for each slice
-        for start, end in slices:
-            q_max_temp[start:end] = torch.max(q_max_temp[start:end]).detach()
-            q_min_temp[start:end] = torch.min(q_min_temp[start:end]).detach()
-
-        # Update global q_max and q_min
-        q_max = torch.max(q_max, q_max_temp).detach()
-        q_min = torch.min(q_min, q_min_temp).detach()
-
-        return q_max, q_min

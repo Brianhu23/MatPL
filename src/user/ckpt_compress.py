@@ -6,7 +6,7 @@ from src.user.input_param import InputParam
 from src.PWMLFF.dp_network import dp_network
 from src.model.dp_dp import DP
 from src.model.dp_dp_typ_emb import TypeDP
-from utils.atom_type_emb_dict import get_normalized_data_list
+from src.utils.atom_type_emb_dict import get_normalized_data_list
 '''
 description: 
     issue: Should we use the normalized multiples or adjust the previous multiples for the upper bound setting of sij?

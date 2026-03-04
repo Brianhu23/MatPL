@@ -1,5 +1,5 @@
 import numpy as np
-from utils.json_operation import get_parameter, get_required_parameter
+from src.utils.json_operation import get_parameter, get_required_parameter
 
 class Descriptor(object):
     def __init__(self, json_input:dict, model_type:str, cmd:str, feature_type:list=None, type_embedding:bool=False) -> None:

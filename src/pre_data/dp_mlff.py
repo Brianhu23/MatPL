@@ -6,8 +6,8 @@ import torch
 # from collections import Counter
 # import subprocess as sp
 # import time
-# from utils.random_utils import random_index
-# from utils.extract_movement import MOVEMENT
+# from src.utils.random_utils import random_index
+# from src.utils.extract_movement import MOVEMENT
 from src.lib.NeighConst import neighconst
 
 '''

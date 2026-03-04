@@ -49,8 +49,8 @@ from src.pre_data.nn_mlff_hybrid import get_cluster_dirs, make_work_dir, mv_feat
 
 from src.PWMLFF.nn_param_extract import load_scaler_from_checkpoint, load_dfeat_input
 
-from utils.file_operation import write_line_to_file, smlink_file
-from utils.debug_operation import check_cuda_memory
+from src.utils.file_operation import write_line_to_file, smlink_file
+from src.utils.debug_operation import check_cuda_memory
 
 from src.user.input_param import InputParam
 # from optimizer.kalmanfilter import GKalmanFilter, LKalmanFilter, SKalmanFilter
@@ -131,17 +131,9 @@ class nn_network:
         else:
             raise RuntimeError("Training: unsupported dtype: %s" %self.dp_params.precision)  
 
-        # if self.dp_params.hvd:
-        #     hvd.init()
-        #     self.dp_params.gpu = hvd.local_rank()
-
         # set training device
         if torch.cuda.is_available():
-            if self.dp_params.gpu:
-                print("Use GPU: {} for training".format(self.dp_params.gpu))
-                self.device = torch.device("cuda:{}".format(self.dp_params.gpu))
-            else:
-                self.device = torch.device("cuda")
+            self.device = torch.device("cuda")
         else:
             self.device = torch.device("cpu")
 
@@ -441,11 +433,9 @@ class nn_network:
                 print("=> loading checkpoint '{}'".format(model_path))
                 if not torch.cuda.is_available():
                     checkpoint = torch.load(model_path,map_location=torch.device('cpu'), weights_only=False )
-                elif self.dp_params.gpu is None:
-                    checkpoint = torch.load(model_path, weights_only=False)
                 elif torch.cuda.is_available():
                     # Map model to be loaded to specified single gpu.
-                    loc = "cuda:{}".format(self.dp_params.gpu)
+                    loc = "cuda:{}".format(0)
                     checkpoint = torch.load(model_path, map_location=loc, weights_only=False)
                 # start afresh
                 self.dp_params.optimizer_param.start_epoch = checkpoint["epoch"] + 1

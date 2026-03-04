@@ -1,8 +1,8 @@
 import json
 import os 
 
-from utils.json_operation import get_parameter, get_required_parameter
-from utils.nep_to_gpumd import get_atomic_name_from_str
+from src.utils.json_operation import get_parameter, get_required_parameter
+from src.utils.nep_to_gpumd import get_atomic_name_from_str
 class LmpParam(object):
     def __init__(self, lmp_json:json, working_dir:str) -> None:
         self.json_dir = os.getcwd()

@@ -18,9 +18,9 @@ sys.path.append(codepath+'/../..')
 
 from src.user.input_param_tmp import InputParam
 # from src.pre_data.nn_mlff_hybrid import get_cluster_dirs, make_work_dir, mv_featrues, copy_file
-from utils.file_operation import write_arrays_to_file
+from src.utils.file_operation import write_arrays_to_file
 from src.aux.inference_plot import inference_plot
-from utils.file_operation import copy_movements_to_work_dir, reset_pm_params, combine_movement, copy_tree
+from src.utils.file_operation import copy_movements_to_work_dir, reset_pm_params, combine_movement, copy_tree
 from src.aux.plot_evaluation import plot_new, read_dft_movement
 import fortran_fitting as ff 
 import default_para as pm 

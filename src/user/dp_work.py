@@ -3,8 +3,8 @@ import json
 import torch
 from src.user.input_param import InputParam
 from src.PWMLFF.dp_network import dp_network
-from utils.file_operation import delete_tree, copy_tree, copy_file
-from utils.json_operation import get_parameter, get_required_parameter
+from src.utils.file_operation import delete_tree, copy_tree, copy_file
+from src.utils.json_operation import get_parameter, get_required_parameter
 
 '''
 description: do dp training

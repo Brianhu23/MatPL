@@ -5,16 +5,16 @@ import numpy as np
 import time
 import torch
 import torch.nn as nn
-from torch.utils.data import Subset
-from torch.autograd import Variable
-from src.loss.dploss import dp_loss, adjust_lr
+import torch.distributed as dist
+from src.loss.dploss import calc_loss, adjust_lr, warmup_lr
+
 from src.optimizer.KFWrapper import KFOptimizerWrapper
 # import horovod.torch as hvd
-from torch.profiler import profile, record_function, ProfilerActivity
+# from torch.profiler import profile, record_function, ProfilerActivity
 from src.user.input_param import InputParam
-from utils.debug_operation import check_cuda_memory
+from src.utils.debug_operation import check_cuda_memory
 from collections import defaultdict
-from utils.train_log import AverageMeter, Summary, ProgressMeter
+from src.utils.train_log import AverageMeter, Summary, ProgressMeter
 
 if torch.cuda.is_available():
     lib_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
@@ -26,45 +26,6 @@ else:
         "op/build/lib/libCalcOps_bind_cpu.so")
     torch.ops.load_library(lib_path)    # load the custom op, no use for cpu version
     CalcOps = torch.ops.CalcOps_cpu     # only for compile while no cuda device
-
-# abandon this function
-def get_ri_rid_by_cutoff(
-    Ri:torch.Tensor,
-    list_neigh :torch.Tensor, 
-    list_neigh_type :torch.Tensor, 
-    cutoff: float,
-    max_neighbor_type:int
-    ):
-    # calculate ri_d
-    mask = Ri[:, :, :, 0].abs() > 1e-5
-    Ri_d = torch.zeros(Ri.shape[0], Ri.shape[1], max_neighbor_type, 4, 3, dtype=Ri.dtype, device=Ri.device)
-    Ri_d[:, :, :, 0, 0][mask] = Ri[:, :, :, 1][mask] / Ri[:, :, :, 0][mask]
-    Ri_d[:, :, :, 1, 0][mask] = 1
-    # dy
-    Ri_d[:, :, :, 0, 1][mask] = Ri[:, :, :, 2][mask] / Ri[:, :, :, 0][mask]
-    Ri_d[:, :, :, 2, 1][mask] = 1
-    # dz
-    Ri_d[:, :, :, 0, 2][mask] = Ri[:, :, :, 3][mask] / Ri[:, :, :, 0][mask]
-    Ri_d[:, :, :, 3, 2][mask] = 1 
-
-    # 1. Ri 的第 0 列元素如果大于 cutoff 就将整行置 0
-    ri_new = Ri.clone().detach()
-    mask = (Ri[:, :, :, 0] > cutoff)
-    ri_new[mask] = 0
-    # ri_new.requires_grad_()
-    # 2. 创建 ri_d：对于 ri_new 中整行置 0 的位置，对应的 Ri_d 中的元素置 0
-    ri_d_new = Ri_d.clone().detach()
-    ri_d_new[mask] = 0
-
-    # 3. 创建 neigh：对于 ri_new 中整行置 0 的位置，对应的 neigh 中的元素置 0
-    neigh_new = list_neigh.clone().detach()
-    neigh_new[mask] = 0
-
-    # 4. 创建 type：对于 ri_new 中整行置 0 的位置，对应的 type 中的元素置 -1
-    type_new = list_neigh_type.clone().detach()
-    type_new[mask] = -1
-    return Ri_d, ri_new, ri_d_new, neigh_new, type_new
-
 
 def print_l1_l2(model):
     params = model.parameters()
@@ -82,28 +43,40 @@ def print_l1_l2(model):
     return L1, L2
 
 def train(train_loader, model, criterion, optimizer, scheduler, epoch, start_lr, device, args:InputParam):
-    batch_time = AverageMeter("Time", ":6.3f")
-    data_time = AverageMeter("Data", ":6.3f")
-    learning_rate = AverageMeter("LR", ":.8e", Summary.AVERAGE)
-    losses = AverageMeter("Loss", ":.4e", Summary.AVERAGE)
-    loss_Etot = AverageMeter("Etot", ":.4e", Summary.ROOT)
-    loss_Etot_per_atom = AverageMeter("Etot_per_atom", ":.4e", Summary.ROOT)
-    loss_Force = AverageMeter("Force", ":.4e", Summary.ROOT)
-    loss_Virial = AverageMeter("Virial", ":.4e", Summary.ROOT)
-    loss_Virial_per_atom = AverageMeter("Virial_per_atom", ":.4e", Summary.ROOT)
-    loss_Ei = AverageMeter("Ei", ":.4e", Summary.ROOT)
-    loss_Egroup = AverageMeter("Egroup", ":.4e", Summary.ROOT)
-    loss_L1 = AverageMeter("Loss_L1", ":.4e", Summary.ROOT)
-    loss_L2 = AverageMeter("Loss_L2", ":.4e", Summary.ROOT)
+    def scale_learning_rate(ngpus, nbatch, avg_atom_nums, scaling_method):
+        if scaling_method == 'linear_gpu':
+            return ngpus # 只乘以卡数
+        elif scaling_method == 'sqrt_batch':
+            return nbatch** 0.5 
+        elif scaling_method == 'sqrt_gpu':
+            return ngpus** 0.5        
+        elif scaling_method == 'sqrt':
+            return (nbatch * ngpus) ** 0.5
+        elif scaling_method == 'sqrt_batch_gpu_atom':
+            return (nbatch * ngpus * avg_atom_nums) ** 0.5
+        return (avg_atom_nums) ** 0.5
+        
+    batch_time = AverageMeter("Time", ":6.3f", device=device, world_size=args.world_size)
+    data_time = AverageMeter("Data", ":6.3f", device=device, world_size=args.world_size)
+    learning_rate = AverageMeter("LR", ":.8e", Summary.AVERAGE, device=device, world_size=args.world_size)
+    losses = AverageMeter("Loss", ":.4e", Summary.AVERAGE, device=device, world_size=args.world_size)
+    loss_Etot = AverageMeter("Etot", ":.4e", Summary.ROOT, device=device, world_size=args.world_size)
+    loss_Etot_per_atom = AverageMeter("Etot_per_atom", ":.4e", Summary.ROOT, device=device, world_size=args.world_size)
+    loss_Force = AverageMeter("Force", ":.4e", Summary.ROOT, device=device, world_size=args.world_size)
+    loss_Virial = AverageMeter("Virial", ":.4e", Summary.ROOT, device=device, world_size=args.world_size)
+    loss_Virial_per_atom = AverageMeter("Virial_per_atom", ":.4e", Summary.ROOT, device=device, world_size=args.world_size)
+    loss_Ei = AverageMeter("Ei", ":.4e", Summary.ROOT, device=device, world_size=args.world_size)
+    loss_Egroup = AverageMeter("Egroup", ":.4e", Summary.ROOT, device=device, world_size=args.world_size)
+    loss_L1 = AverageMeter("Loss_L1", ":.4e", Summary.ROOT, device=device, world_size=args.world_size)
+    loss_L2 = AverageMeter("Loss_L2", ":.4e", Summary.ROOT, device=device, world_size=args.world_size)
     progress = ProgressMeter(
         len(train_loader),
         [batch_time, data_time, learning_rate, losses, loss_L1, loss_L2, loss_Etot, loss_Etot_per_atom, loss_Force, loss_Ei, loss_Egroup, loss_Virial, loss_Virial_per_atom],
-        prefix="Epoch: [{}]".format(epoch),
+        prefix=f"Epoch: [{epoch}]",
     )
-    
-    # switch to train mode
+
+    module = model.module if args.world_size > 1 else model
     model.train()
-    # check_cuda_memory(epoch, 0, " start train ")
     end = time.time()
     for i, sample in enumerate(train_loader):
         sample = {key: value.to(device) for key, value in sample.items()}
@@ -113,226 +86,193 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, start_lr,
             sample["box_original"],
             sample["num_cell"],
             sample["position"],
-            model.cutoff_radial,
-            model.cutoff_angular,
-            len(model.atom_type),
+            module.cutoff_radial,
+            module.cutoff_angular,
+            len(module.atom_type),
             sample["atom_type_map"],
             False
         )
         max_NN_radial = max(torch.max(nn_radial).item(), 10)
         max_NN_angular = max(torch.max(nn_angular).item(), 10)
-        FFAtomType = torch.from_numpy(np.array(model.atom_type)).to(device=device, dtype=sample["atom_type_map"].dtype)
+        FFAtomType = torch.from_numpy(np.array(module.atom_type)).to(device=device, dtype=sample["atom_type_map"].dtype)
         # mem_3c = (int(sample['num_atom_sum'][-1])  *  model.max_NN_angular + int(sample['num_atom_sum'][-1]) ) * len(args.atom_type) *args.nep_param.basis_size[1] * args.nep_param.n_max[1] * 8 / 1024/ 1024/ 1024
+        # line = f"Epoch {epoch} - iter {i}: Rank: {args.rank}, LocalRank: {args.local_rank} start: timeused {time.time() - end}"
+        # check_cuda_memory(epoch, args.optimizer_param.epochs, line, False, args.rank)
         NN_radial, NN_angular, NL_radial, NL_angular, Ri_radial, Ri_angular = \
             CalcOps.calculate_neighbor(
-            sample["num_atom"],
-            sample["atom_type_map"],
-            FFAtomType-1,
-            sample["box"],
-            sample["box_original"],
-            sample["num_cell"],
-            sample["position"],
-            model.cutoff_radial,
-            model.cutoff_angular,
-            max_NN_radial,
-            max_NN_angular,
-            True #calculate_neighbor with rij
-        )
+                sample["num_atom"],
+                sample["atom_type_map"],
+                FFAtomType - 1,
+                sample["box"],
+                sample["box_original"],
+                sample["num_cell"],
+                sample["position"],
+                module.cutoff_radial,
+                module.cutoff_angular,
+                max_NN_radial,
+                max_NN_angular,
+                True
+            )
         Virial_label = sample["virial"]
-        Etot_label   = sample["energy"]
-        Ei_label     = sample["ei"]
+        Etot_label = sample["energy"]
+        Ei_label = sample["ei"]
         Egroup_label = None
-        Force_label  = sample["force"]
-
-        # measure data loading time
+        Force_label = sample["force"]
+       
         data_time.update(time.time() - end)
-        batch_size =  sample["num_atom"].shape[0]
+        batch_size = sample["num_atom"].shape[0]
         avg_atom_number = (sample['num_atom_sum'][-1] / batch_size).item()
         nr_batch_sample = sample["num_atom"].shape[0]
-        if scheduler is None:
-            global_step = (epoch - 1) * len(train_loader) + i * nr_batch_sample
-            real_lr = adjust_lr(global_step, start_lr, \
-                            args.optimizer_param.stop_step, args.optimizer_param.decay_step, args.optimizer_param.stop_lr) #  stop_step, decay_step
-            for param_group in optimizer.param_groups:
-                param_group["lr"] = real_lr * (avg_atom_number**0.5)
-        else:
-            real_lr = optimizer.param_groups[0]["lr"]
-            # adjusted_lr = real_lr * (avg_atom_number ** 0.5)
-            # for param_group in optimizer.param_groups:
-            #     param_group["lr"] = adjusted_lr
-        learning_rate.update(real_lr)
-        Etot_predict, Ei_predict, Force_predict, Egroup_predict, Virial_predict = model(
-                NN_radial, NL_radial, Ri_radial, 
-                    NN_angular, NL_angular, Ri_angular,
-                        sample["num_atom"], sample["atom_type_map"], None, None)
+        # 如果采用预热，则前n个epoch 学习率线性增加
+        if args.optimizer_param.warmup is not None and epoch <= args.optimizer_param.warmup: # epoch 从1计数
+            start_lr = args.optimizer_param.stop_lr * scale_learning_rate(args.world_size, batch_size, avg_atom_number, args.optimizer_param.scaling_method)
+            end_lr = args.optimizer_param.learning_rate * scale_learning_rate(args.world_size, batch_size, avg_atom_number, args.optimizer_param.scaling_method)
+            real_lr = warmup_lr(iter=i, 
+                                iternum=len(train_loader), 
+                                cur_epoch=epoch, 
+                                warm_epochs=args.optimizer_param.warmup, 
+                                start_lr=start_lr,
+                                end_lr=end_lr
+                                )
+            is_warmlr = True
+        else:  
+            is_warmlr = False
+            if scheduler is None: # 不启用周期性重启
+                global_step = (epoch - 1) * len(train_loader) + i * nr_batch_sample
+                real_lr = adjust_lr(
+                    global_step, start_lr,
+                    args.optimizer_param.stop_step, args.optimizer_param.decay_step, args.optimizer_param.stop_lr
+                )
+                real_lr = real_lr * scale_learning_rate(args.world_size, batch_size, avg_atom_number, args.optimizer_param.scaling_method) # rl * (sqrt(batch*gpu)
+                for param_group in optimizer.param_groups:
+                    param_group["lr"] = real_lr
+            else: # 周期性重启
+                real_lr = optimizer.param_groups[0]["lr"] * scale_learning_rate(args.world_size, batch_size, avg_atom_number, args.optimizer_param.scaling_method)
         
+        learning_rate.update(real_lr)
+        # check_cuda_memory(epoch, -1, f"before forword atomnums {Force_label.shape[0]}", False, args.rank)
+        Etot_predict, Ei_predict, Force_predict, Egroup_predict, Virial_predict = model(
+            NN_radial, NL_radial, Ri_radial,
+            NN_angular, NL_angular, Ri_angular,
+            sample["num_atom"], sample["atom_type_map"], None, None
+        )
+        # check_cuda_memory(epoch, -1, "end forword", False, args.rank)
         optimizer.zero_grad()
-
         loss_F_val = criterion(Force_predict, Force_label)
         loss_Etot_val = criterion(Etot_predict, Etot_label)
-        loss_Etot_per_atom_val = criterion(Etot_predict/sample["num_atom"], Etot_label/sample["num_atom"])
+        loss_Etot_per_atom_val = criterion(Etot_predict / sample["num_atom"], Etot_label / sample["num_atom"])
         loss_Ei_val = criterion(Ei_predict, Ei_label)
         loss_val = torch.zeros_like(loss_F_val)
 
-        if args.optimizer_param.train_egroup is True:
+        if args.optimizer_param.train_egroup:
             loss_Egroup_val = criterion(Egroup_predict, Egroup_label)
-        if args.optimizer_param.train_virial is True:
-            # loss_Virial_val = criterion(Virial_predict, Virial_label.squeeze(1))  #115.415137283393
+        if args.optimizer_param.train_virial:
             data_mask = Virial_label[:, 0] > -1e6
-            _Virial_label = Virial_label[:, [0,1,2,4,5,8]][data_mask]
+            _Virial_label = Virial_label[:, [0, 1, 2, 4, 5, 8]][data_mask]
             if data_mask.any().item():
-                loss_Virial_val = criterion(Virial_predict[data_mask][:,[0,1,2,4,5,8]], _Virial_label)
-                loss_Virial_per_atom_val = criterion(Virial_predict[data_mask][:,[0,1,2,4,5,8]]/sample["num_atom"][data_mask], _Virial_label/sample["num_atom"][data_mask])
+                loss_Virial_val = criterion(Virial_predict[data_mask][:, [0, 1, 2, 4, 5, 8]], _Virial_label)
+                loss_Virial_per_atom_val = criterion(
+                    Virial_predict[data_mask][:, [0, 1, 2, 4, 5, 8]] / sample["num_atom"][data_mask],
+                    _Virial_label / sample["num_atom"][data_mask]
+                )
                 loss_Virial.update(loss_Virial_val.item(), _Virial_label.shape[0])
                 loss_Virial_per_atom.update(loss_Virial_per_atom_val.item(), _Virial_label.shape[0])
                 loss_val += args.optimizer_param.pre_fac_virial * loss_Virial_val
 
         w_f, w_e, w_v, w_eg, w_ei = 0, 0, 0, 0, 0
-
-        if args.optimizer_param.train_force is True:
-            w_f = 1.0 
+        if args.optimizer_param.train_force:
+            w_f = 1.0
             loss_val += loss_F_val
-        
-        if args.optimizer_param.train_energy is True:
+        if args.optimizer_param.train_energy:
             w_e = 1.0
             loss_val += loss_Etot_val
-        
-        if args.optimizer_param.train_virial is True and data_mask.any().item():
-            w_v = 1.0 
+        if args.optimizer_param.train_virial and data_mask.any().item():
+            w_v = 1.0
             loss_val += loss_Virial_val
-        
-        if args.optimizer_param.train_egroup is True:
-            w_eg = 1.0 
+        if args.optimizer_param.train_egroup:
+            w_eg = 1.0
             loss_val += loss_Egroup_val
 
-        if args.optimizer_param.train_egroup is True and args.optimizer_param.train_virial is True:
-            loss, _, _ = dp_loss(
-                args,
-                0.001,
-                real_lr,
-                1,
-                w_f,
-                loss_F_val,
-                w_e,
-                loss_Etot_val,
-                w_v,
-                loss_Virial_val,
-                w_eg,
-                loss_Egroup_val,
-                w_ei,
-                loss_Ei_val,
-                avg_atom_number,
+        if args.optimizer_param.train_egroup and args.optimizer_param.train_virial:
+            loss, _, _ = calc_loss(
+                args, 0.001, real_lr, 1, w_f, loss_F_val, w_e, loss_Etot_val, w_v, loss_Virial_val, w_eg, loss_Egroup_val, w_ei, loss_Ei_val, avg_atom_number
             )
-        elif args.optimizer_param.train_egroup is True and args.optimizer_param.train_virial is False:
-            loss, _, _ = dp_loss(
-                args,
-                0.001,
-                real_lr,
-                2,
-                w_f,
-                loss_F_val,
-                w_e,
-                loss_Etot_val,
-                w_eg,
-                loss_Egroup_val,
-                w_ei,
-                loss_Ei_val,
-                avg_atom_number,
+        elif args.optimizer_param.train_egroup and not args.optimizer_param.train_virial:
+            loss, _, _ = calc_loss(
+                args, 0.001, real_lr, 2, w_f, loss_F_val, w_e, loss_Etot_val, w_eg, loss_Egroup_val, w_ei, loss_Ei_val, avg_atom_number
             )
-        elif args.optimizer_param.train_egroup is False and \
-                args.optimizer_param.train_virial is True and data_mask.any().item():
-            loss, _, _ = dp_loss(
-                args,
-                0.001,
-                real_lr,
-                3,
-                w_f,
-                loss_F_val,
-                w_e,
-                loss_Etot_val,
-                w_v,
-                loss_Virial_val,
-                w_ei,
-                loss_Ei_val,
-                avg_atom_number,
+        elif not args.optimizer_param.train_egroup and args.optimizer_param.train_virial and data_mask.any().item():
+            loss, _, _ = calc_loss(
+                args, 0.001, real_lr, 3, w_f, loss_F_val, w_e, loss_Etot_val, w_v, loss_Virial_val, w_ei, loss_Ei_val, avg_atom_number
             )
         else:
-            loss, _, _ = dp_loss(
-                args,
-                0.001,
-                real_lr,
-                4,
-                w_f,
-                loss_F_val,
-                w_e,
-                loss_Etot_val,
-                w_ei,
-                loss_Ei_val,
-                avg_atom_number,
+            loss, _, _ = calc_loss(
+                args, 0.001, real_lr, 4, w_f, loss_F_val, w_e, loss_Etot_val, w_ei, loss_Ei_val, avg_atom_number
             )
+        # check_cuda_memory(epoch, -1, "before backward", False, args.rank)
         loss.backward()
-        # print(f"{i} {torch.sum(model.c_param_3.grad)} Einfer:{Etot_predict[0][0].item()} Edft:{Etot_label[0][0].item()}")
+        torch.cuda.empty_cache() # 释放pytoch 缓存管理器持有的缓冲块，因为它对cuda算子不可见，导致算子内存不够用，这部分缓冲块 64batch下约10个G
+        # check_cuda_memory(epoch, -1, "end backward", False, args.rank)
+
         if args.optimizer_param.norm_type is not None:
             nn.utils.clip_grad_norm_(model.parameters(), args.optimizer_param.max_norm, args.optimizer_param.norm_type)
         elif args.optimizer_param.clip_value is not None:
             nn.utils.clip_grad_value_(model.parameters(), args.optimizer_param.clip_value)
         optimizer.step()
-        
-        if scheduler is not None:
+
+        if scheduler is not None and is_warmlr is False:
             scheduler.step()
 
         loss_val = loss
         L1, L2 = print_l1_l2(model)
-        if args.optimizer_param.lambda_2 is not None:
+        if args.optimizer_param.lambda_2:
             loss_val += L2
 
-        # measure accuracy and record loss
         losses.update(loss_val.item(), batch_size)
         loss_Etot.update(loss_Etot_val.item(), batch_size)
         loss_Etot_per_atom.update(loss_Etot_per_atom_val.item(), batch_size)
         loss_Ei.update(loss_Ei_val.item(), batch_size)
-        
         loss_L1.update(L1.item(), batch_size)
         loss_L2.update(L2.item(), batch_size)
-
-        if args.optimizer_param.train_egroup is True:
+        if args.optimizer_param.train_egroup:
             loss_Egroup.update(loss_Egroup_val.item(), batch_size)
-
         loss_Force.update(loss_F_val.item(), batch_size)
 
-        # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
 
         if i % args.optimizer_param.print_freq == 0:
-            progress.display(i + 1)
+            if args.world_size > 1 and args.reduce_loss:
+                progress.sync_meters()
+            if args.rank == 0:
+                progress.display(i + 1)
 
         if args.save_step is not None and i % args.save_step == 0:
-            save_step_checkpoint(
+            if args.rank == 0:
+                save_step_checkpoint(
                     {
-                        "json_file":args.to_dict(),
+                        "json_file": args.to_dict(),
                         "epoch": epoch,
-                        "state_dict": model.state_dict(),
-                        "energy_shift":model.energy_shift,
-                        "max_neighbor": [model.max_NN_radial, model.max_NN_angular],
-                        "q_scaler": model.get_q_scaler(),
-                        "atom_type_order": args.atom_type    #atom type order of davg/dstd/energy_shift
-                        # "optimizer":optimizer.state_dict()
-                        # "sij_max":Sij_max
+                        "state_dict": model.state_dict()
+                        # "energy_shift": module.energy_shift,
+                        # "max_neighbor": [model.max_NN_radial, model.max_NN_angular],
+                        # "q_scaler": model.get_q_scaler(),
+                        # "atom_type_order": args.atom_type
                     },
                     os.path.join(args.file_paths.model_store_dir, "saved_models"),
                     epoch,
                     i,
                     args.max_save_num
                 )
-        # 添加内存清理
-        # del NN_radial, NN_angular, NL_radial, NL_angular, Ri_radial, Ri_angular
-        # del Etot_predict, Ei_predict, Force_predict, Egroup_predict, Virial_predict
-        # del sample
-        # if torch.cuda.is_available():
-        #     torch.cuda.empty_cache()
+            if args.world_size > 1:
+                dist.barrier()
 
-    progress.display_summary(["Training Set:"])
+    if args.world_size > 1: 
+        progress.sync_meters()
+
+    if args.rank == 0:
+        progress.display_summary(["Training Set:"])
+
     return (
         losses.avg,
         loss_Etot.root,
@@ -345,7 +285,6 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, start_lr,
         real_lr,
         loss_L1.root,
         loss_L2.root
-        # Sij_max,    
     )
 
 def train_KF(train_loader, model, criterion, optimizer, epoch, device, args:InputParam):
@@ -505,17 +444,17 @@ def valid(val_loader, model, criterion, device, args:InputParam):
         L1, L2 = print_l1_l2(model)
         for i, sample in enumerate(val_loader):
             sample = {key: value.to(device) for key, value in sample.items()}
-            FFAtomType = torch.from_numpy(np.array(model.atom_type)).to(device=device, dtype=sample["atom_type_map"].dtype)
-            
+            FFAtomType = torch.from_numpy(np.array(module.atom_type)).to(device=device, dtype=sample["atom_type_map"].dtype)
+
             nn_radial, nn_angular = CalcOps.calculate_maxneigh(
                 sample["num_atom"],
                 sample["box"],
                 sample["box_original"],
                 sample["num_cell"],
                 sample["position"],
-                model.cutoff_radial,
-                model.cutoff_angular,
-                len(model.atom_type),
+                module.cutoff_radial,
+                module.cutoff_angular,
+                len(module.atom_type),
                 sample["atom_type_map"],
                 False
             )
@@ -530,13 +469,12 @@ def valid(val_loader, model, criterion, device, args:InputParam):
                 sample["box_original"],
                 sample["num_cell"],
                 sample["position"],
-                model.cutoff_radial,
-                model.cutoff_angular,
+                module.cutoff_radial,
+                module.cutoff_angular,
                 max_NN_radial,
                 max_NN_angular,
                 True #calculate_neighbor
             )
-
             Virial_label = sample["virial"]
             Etot_label   = sample["energy"]
             Ei_label     = sample["ei"]
@@ -597,24 +535,27 @@ def valid(val_loader, model, criterion, device, args:InputParam):
         end = time.time()
 
         if i % args.optimizer_param.print_freq == 0:
-            progress.display(i + 1) 
+            if args.world_size > 1 and args.reduce_loss:
+                progress.sync_meters()
+            if args.rank == 0:
+                progress.display(i + 1) 
         
-    batch_time = AverageMeter("Time", ":6.3f", Summary.NONE)
-    losses = AverageMeter("Loss", ":.4e", Summary.AVERAGE)
-    loss_Etot = AverageMeter("Etot", ":.4e", Summary.ROOT)
-    loss_Etot_per_atom = AverageMeter("Etot_per_atom", ":.4e", Summary.ROOT)
-    loss_Force = AverageMeter("Force", ":.4e", Summary.ROOT)
-    loss_Ei = AverageMeter("Ei", ":.4e", Summary.ROOT)
-    loss_Egroup = AverageMeter("Egroup", ":.4e", Summary.ROOT)
-    loss_Virial = AverageMeter("Virial", ":.4e", Summary.ROOT)
-    loss_Virial_per_atom = AverageMeter("Virial_per_atom", ":.4e", Summary.ROOT)
+    batch_time = AverageMeter("Time", ":6.3f", device=device, world_size=args.world_size)
+    losses = AverageMeter("Loss", ":.4e", Summary.AVERAGE, device=device, world_size=args.world_size)
+    loss_Etot = AverageMeter("Etot", ":.4e", Summary.ROOT, device=device, world_size=args.world_size)
+    loss_Etot_per_atom = AverageMeter("Etot_per_atom", ":.4e", Summary.ROOT, device=device, world_size=args.world_size)
+    loss_Force = AverageMeter("Force", ":.4e", Summary.ROOT, device=device, world_size=args.world_size)
+    loss_Ei = AverageMeter("Ei", ":.4e", Summary.ROOT, device=device, world_size=args.world_size)
+    loss_Egroup = AverageMeter("Egroup", ":.4e", Summary.ROOT, device=device, world_size=args.world_size)
+    loss_Virial = AverageMeter("Virial", ":.4e", Summary.ROOT, device=device, world_size=args.world_size)
+    loss_Virial_per_atom = AverageMeter("Virial_per_atom", ":.4e", Summary.ROOT, device=device, world_size=args.world_size)
 
     progress = ProgressMeter(
         len(val_loader),
         [batch_time, losses, loss_Etot, loss_Etot_per_atom, loss_Force, loss_Ei, loss_Egroup, loss_Virial, loss_Virial_per_atom],
         prefix="Test: ",    
     )
-    
+    module = model.module if args.world_size > 1 else model
     # switch to evaluate mode
     model.eval()
     
@@ -646,7 +587,10 @@ def valid(val_loader, model, criterion, device, args:InputParam):
             loss_Virial_per_atom.all_reduce()
     """
 
-    progress.display_summary(["Test Set:"])
+    if args.world_size > 1: 
+        progress.sync_meters()
+    if args.rank == 0:
+        progress.display_summary(["Test Set:"])
 
     return losses.avg, loss_Etot.root, loss_Etot_per_atom.root, loss_Force.root, loss_Ei.root, loss_Egroup.root, loss_Virial.root, loss_Virial_per_atom.root
 

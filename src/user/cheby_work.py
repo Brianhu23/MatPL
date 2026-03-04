@@ -3,7 +3,7 @@ import json
 import torch
 from src.user.input_param import InputParam
 from src.PWMLFF.cheby_network import cheby_network
-from utils.json_operation import get_required_parameter
+from src.utils.json_operation import get_required_parameter
 
 def cheby_train(input_json: json, cmd:str):
     cheby_param = InputParam(input_json, cmd) 
