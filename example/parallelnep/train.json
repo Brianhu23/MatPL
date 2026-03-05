@@ -1,0 +1,51 @@
+{
+    "model_type": "NEP",
+    "atom_type": [
+        8, 72
+    ],
+    "optimizer": {
+       "optimizer": "ADAM",
+        "epochs": 1000,
+        "batch_size": 64,
+        "print_freq": 10,
+        "max_norm": 0.5,
+        "norm_type": 2,
+        "t_0": 2,
+        "t_mult": 2,
+        "train_energy": true,
+        "train_force": true,
+        "learning_rate": 0.001,
+        "stop_lr": 3.51e-08,
+        "_stop_step": 1000000,
+        "_decay_step": 5000,
+        "start_pre_fac_force": 10,
+        "start_pre_fac_etot": 1.0,
+        "end_pre_fac_force": 1.0,
+        "end_pre_fac_etot": 1.0
+    },
+    "seed": 2023,
+    "format":"pwmlff/npy",
+    "train_data": [
+        "../HfO2/pwdata/init_000_50/", "../HfO2/pwdata/init_002_50/", 
+        "../HfO2/pwdata/init_004_50/", "../HfO2/pwdata/init_006_50/", 
+        "../HfO2/pwdata/init_008_50/", "../HfO2/pwdata/init_010_50/", 
+        "../HfO2/pwdata/init_012_50/", "../HfO2/pwdata/init_014_50/", 
+        "../HfO2/pwdata/init_016_50/", "../HfO2/pwdata/init_018_50/", 
+        "../HfO2/pwdata/init_020_20/", "../HfO2/pwdata/init_022_20/", 
+        "../HfO2/pwdata/init_024_20/", "../HfO2/pwdata/init_026_20/", 
+        "../HfO2/pwdata/init_001_50/", "../HfO2/pwdata/init_003_50/", 
+        "../HfO2/pwdata/init_005_50/", "../HfO2/pwdata/init_007_50/", 
+        "../HfO2/pwdata/init_009_50/", "../HfO2/pwdata/init_011_50/", 
+        "../HfO2/pwdata/init_013_50/", "../HfO2/pwdata/init_015_30/", 
+        "../HfO2/pwdata/init_017_50/", "../HfO2/pwdata/init_019_50/", 
+        "../HfO2/pwdata/init_021_20/", "../HfO2/pwdata/init_023_20/", 
+        "../HfO2/pwdata/init_025_20/", "../HfO2/pwdata/init_027_20/"
+    ],
+    "valid_data":[
+        "../HfO2/pwdata/init_000_50/",
+        "../HfO2/pwdata/init_004_50/",
+        "../HfO2/pwdata/init_008_50/"       
+    ]
+
+}
+
