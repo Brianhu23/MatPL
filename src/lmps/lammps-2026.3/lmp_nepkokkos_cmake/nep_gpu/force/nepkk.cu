@@ -355,7 +355,7 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
       }
     } else {
       tokens = get_tokens(input);
-      parameters[n] = get_float_from_token(tokens[0], __FILE__, __LINE__);
+      parameters[n] = (float) get_double_from_token(tokens[0], __FILE__, __LINE__);
     }
   }
   nep_data.parameters.resize(annmb.num_para);
@@ -364,7 +364,7 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
 
   for (int d = 0; d < annmb.dim; ++d) {
     tokens = get_tokens(input);
-    paramb.q_scaler[d] = get_float_from_token(tokens[0], __FILE__, __LINE__);
+    paramb.q_scaler[d] = (float) get_double_from_token(tokens[0], __FILE__, __LINE__);
     // std::cout<<"q_scaler " << d << " " << paramb.q_scaler[d] << std::endl;
   }
 
@@ -379,7 +379,7 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
     int num_type_zbl = (paramb.num_types * (paramb.num_types + 1)) / 2;
     for (int d = 0; d < 10 * num_type_zbl; ++d) {
       tokens = get_tokens(input);
-      zbl.para[d] = get_float_from_token(tokens[0], __FILE__, __LINE__);
+      zbl.para[d] = (float) get_double_from_token(tokens[0], __FILE__, __LINE__);
     }
     zbl.num_types = paramb.num_types;
   }
@@ -527,19 +527,19 @@ void NEPKK::reset_nep_data(int inum, int nlocal, int nall, int vflag_either) {
   if (max_nlocal < nlocal) { 
     max_nlocal = nlocal;
     lmp_data.ilist.resize(max_nlocal);
-    nep_data.f12x.resize(max_nlocal * paramb.MN_angular);
+    nep_data.f12x.resize(max_nlocal * paramb.MN_angular);//保存三体受力x向 dUi/drij
     nep_data.f12y.resize(max_nlocal * paramb.MN_angular);
     nep_data.f12z.resize(max_nlocal * paramb.MN_angular);
 
     nep_data.potential_per_atom.resize(max_nlocal);
     
-    nep_data.Fp.resize(max_nlocal * annmb.dim);//复用，存储特征值，之后存储能量对特征值导数
-    nep_data.sum_fxyz.resize(max_nlocal * (paramb.n_max_angular + 1) * NUM_OF_ABC);
+    nep_data.Fp.resize(max_nlocal * annmb.dim);//复用，存储特征值，之后存储能量对特征值导数 dUi/dfeature
+    nep_data.sum_fxyz.resize(max_nlocal * (paramb.n_max_angular + 1) * NUM_OF_ABC); //保存三体feature Snlm^i，用于反向求导
 
     // nep_data.NN_radial.resize(max_nlocal, 0);
     // nep_data.NL_radial.resize(max_nlocal * paramb.MN_radial, 0);
-    nep_data.NN_angular.resize(max_nlocal, 0);
-    nep_data.NL_angular.resize(max_nlocal * paramb.MN_angular, 0);
+    nep_data.NN_angular.resize(max_nlocal, 0); //三体的近邻表,local原子的近邻数量
+    nep_data.NL_angular.resize(max_nlocal * paramb.MN_angular, 0);//local原子的近邻下标
   }
 
   if (max_nall < nall) {
@@ -653,13 +653,17 @@ void NEPKK::compute(
     force_per_atom = force_per_atom_copy; 
   }
 
-  reset_nep_data(inum, nlocal, nall, vflag_either);
+  reset_nep_data(inum, nlocal, nall, vflag_either);// 初始化NEP辅助数组
+
+  // 将double的原子坐标转换为float32
   doubleTofloat<<<(nall*3 + BLOCK_SIZE256 - 1) / BLOCK_SIZE256, BLOCK_SIZE256>>>(
     lmp_data.position.data(), 
     position, 
     nall*3);
   CUDA_CHECK_KERNEL
-
+  // 做元素类型映射，在lammps中允许输入结构的元素类型顺序与力场中不一致，需要做调整
+  // 如力场结构顺序为 O Hf分别对应0 1，而输入结构顺序为 Hf O 分别对应 1 0，需要做映射
+  // 这里将原子的类型映射回在力场文件中的位置
   convert_atom_types<<<(nall + BLOCK_SIZE256 - 1) / BLOCK_SIZE256, BLOCK_SIZE256>>>(
     nall,
     inum,
@@ -673,6 +677,7 @@ void NEPKK::compute(
   CUDA_CHECK_KERNEL
 
   // 不能对lammps的原始近邻表排序，可能对一些功能产生错误。
+
   //增大到64后，占据多了，66.6%，但是速度变慢了一倍。因为驻留线程多了之后造成了更高的内存带宽压力
   if (USE_SHAREMEM_C2) {//把两体项系数C全部load入共享内存 Ntype*Ntype*(Nmax+1)*(Nbase+1) * 4-float
     size_t shared_mem_size = annmb.num_c2 * sizeof(float);
@@ -692,7 +697,7 @@ void NEPKK::compute(
       lmp_data.position.data(),
       nep_data.Fp.data()); //临时存储特征值
     CUDA_CHECK_KERNEL
-  } else {
+  } else {// 不使用共享内存的版本，系数C直接从全局内存中读取
     calc_2b_descriptor<<<(inum - 1) / BLOCK_SIZE32 + 1, BLOCK_SIZE32>>>(
       paramb,
       annmb,
@@ -711,11 +716,12 @@ void NEPKK::compute(
     CUDA_CHECK_KERNEL    
   }
 
-  // 奇偶排序，行存储，适合于lammps近邻的下标部分有序
+  // 奇偶排序，行存储，适合于lammps近邻的下标部分有序，未使用，因为lammps的近邻表不能排序
   // sort_neighbor_simple_fast_kernel<<<nlocal, 128, paramb.MN_angular * sizeof(int)>>>(
   //   nlocal, paramb.MN_angular, nep_data.NN_angular.data(), nep_data.NL_angular.data());
   // CUDA_CHECK_KERNEL
 
+  // 对三体近邻表做排序，排序后访存的局部性更好
   gpu_sort_neighbor_list<<<nlocal, paramb.MN_angular, paramb.MN_angular * sizeof(int)>>>(
     nlocal, nep_data.NN_angular.data(), nep_data.NL_angular.data());
   CUDA_CHECK_KERNEL
@@ -739,7 +745,7 @@ void NEPKK::compute(
       nep_data.potential_per_atom.data(),
       nep_data.sum_fxyz.data());
     CUDA_CHECK_KERNEL
-  } else {
+  } else {// 不使用共享内存的版本，系数C直接从全局内存中读取
     calc_3b_descriptor<<<(inum - 1) / BLOCK_SIZE32 + 1, BLOCK_SIZE32>>>(
       paramb,
       annmb,
@@ -884,7 +890,7 @@ void NEPKK::compute(
     CUDA_CHECK_KERNEL
   }
 
-  // calculate virial global
+  // calculate virial global 后处理，根据需要计算总的virial，这里virial_per_atom 长度为maxatom * 6
   if (vflag_global) {
     calculate_total_virial<<<(nall - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64>>>(
         virial_per_atom, 
@@ -895,7 +901,7 @@ void NEPKK::compute(
     nep_data.total_virial.copy_to_host(h_etot_virial_global+1, 6);
   }
 
-  if (eflag_global) {
+  if (eflag_global) { // 根据需要计算总能，potential_per_atom是每个原子的能量，需要求和
     const int threads = 512;  // block 大小
      const int blocks = (nlocal + threads - 1) / threads;
      size_t shared_size = threads * sizeof(double);
@@ -927,24 +933,4 @@ void NEPKK::compute(
     CUDA_CHECK_KERNEL
     cudaDeviceSynchronize();
   }
-
-  // if(device == 0) {
-  //   std::vector<double> tmp_f(nall * 3);
-  //   std::vector<double> tmp_e(nlocal);
-  //   cudaMemcpy(tmp_f.data(), force_per_atom, sizeof(double) * nall * 3, cudaMemcpyDeviceToHost);
-  //   cudaMemcpy(tmp_e.data(), potential_per_atom_copy, sizeof(double) * nlocal, cudaMemcpyDeviceToHost);
-  //   for (int ii = 0; ii < inum ; ii++) {
-  //     printf(" e[%d][%d] = %f f[%d][%d] = %f %f %f\n", ff_index, ii, tmp_e[ii], ff_index, ii, tmp_f[ii*3], tmp_f[ii*3+1], tmp_f[ii*3+2]);
-  //   }
-  // }
-
-  // copy virial peratom
-  // if (vflag_atom) {
-  //   copyArrayKernel<<<(nall*6 + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>(virial_per_atom, nep_data.virial_per_atom.data(), nall*6);
-  //   CUDA_CHECK_KERNEL
-  //   cudaDeviceSynchronize();
-  // }
-
-  // printf("======out etot %.15f virial %.15f %.15f %.15f %.15f %.15f %.15f rank %d device %d=======\n", \
-    h_etot_virial_global[0], h_etot_virial_global[1], h_etot_virial_global[2], h_etot_virial_global[3], h_etot_virial_global[4], h_etot_virial_global[5], h_etot_virial_global[6], rank, device);
 }
